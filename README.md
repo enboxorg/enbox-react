@@ -17,11 +17,12 @@ changing library code. It registers its application-owned worker before
 rendering or initializing Enbox. The browser SDK automatically activates
 updated workers.
 
-All declared dependencies, including peers, use exact versions. Bun defaults
-to exact saves, frozen lockfile installs, and no automatic runtime installs;
+Runtime and development dependencies use exact versions; peers accept only
+the explicitly tested releases. Bun defaults to exact saves, frozen lockfile
+installs, and no automatic runtime installs;
 npm also saves exact versions. The current peer pins are `@enbox/browser`
-`0.3.79` and React `19.3.0`. Development setup and intentional version changes
-are documented in
+`0.3.79` and React `18.3.1` or `19.3.0`. Development setup and intentional
+version changes are documented in
 [CONTRIBUTING.md](https://github.com/enboxorg/enbox-react/blob/main/CONTRIBUTING.md).
 
 ## Define the application

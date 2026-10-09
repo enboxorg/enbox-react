@@ -1,14 +1,18 @@
 'use client';
 
-import type { ObservableStore } from '@enbox/browser';
-
 import { useCallback, useSyncExternalStore } from 'react';
 
 const noop = (): void => {};
 
+/** A cached snapshot with change notifications; payloads are not required. */
+export type ObservableStoreSource<Snapshot> = Readonly<{
+  getSnapshot(): Snapshot;
+  subscribe(notify: () => void): () => void;
+}>;
+
 /** Borrows a synchronous store and a reference-stable immutable fallback. */
 export function useObservableStore<Snapshot>(
-  store: ObservableStore<Snapshot> | null | undefined,
+  store: ObservableStoreSource<Snapshot> | null | undefined,
   fallback: Snapshot,
 ): Snapshot {
   const subscribe = useCallback((notify: () => void) => store?.subscribe(notify) ?? noop, [store]);

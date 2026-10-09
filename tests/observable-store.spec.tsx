@@ -29,6 +29,21 @@ class TestStore<Snapshot> implements ObservableStore<Snapshot> {
 }
 
 describe('borrowed observable stores', () => {
+  it('borrows stores that publish wake hints without snapshot payloads', () => {
+    let count = 1;
+    let notify = (): void => {};
+    const source = {
+      getSnapshot: () => count,
+      subscribe: (onChange: () => void) => {
+        notify = onChange;
+        return () => {};
+      },
+    };
+    const hook = renderHook(() => useObservableStore(source, 0));
+    act(() => { count = 2; notify(); });
+    expect(hook.result.current).toBe(2);
+  });
+
   it('reads published snapshots with the store receiver and releases only its subscription', () => {
     const first = Object.freeze({ count: 1 });
     const second = Object.freeze({ count: 2 });

@@ -3,15 +3,16 @@
 ## Setup and checks
 
 Use the Node and Bun versions in `.node-version` and `.bun-version`.
-Install dependencies with `bun install --frozen-lockfile`. Dependency and
-peer versions are exact, and `bunfig.toml` disables automatic runtime
-installation. The Notes example uses built package exports.
+Install dependencies with `bun install --frozen-lockfile`. Dependency versions
+and the allowed peer releases are fixed. `bunfig.toml` disables automatic
+runtime installation. The Notes example uses built package exports.
 
 | Command | Purpose |
 | --- | --- |
 | `bun run build` | Clear generated output and build ESM, declarations, and source maps. |
 | `bun run typecheck` | Build public declarations and check source, type contracts, tooling configuration, and the example. |
 | `bun run test` | Run unit, React, and native local DWN tests. |
+| `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
 | `bun run check` | Run type checks, unit/integration tests, and package checks. |
 | `bun run test:browser` | Build the production example and run Chromium startup/offline tests. |
@@ -46,8 +47,9 @@ to `main`; its actions are pinned to immutable commits.
 
 ## Dependency changes
 
-Keep `@enbox/browser` and React as exact peers so applications use their own
-SDK and React instances. `use-sync-external-store` is the runtime dependency.
+Keep `@enbox/browser` pinned and React peers limited to tested releases so
+applications use their own SDK and React instances. `use-sync-external-store`
+is the runtime dependency.
 Development dependencies support only the build, tests, and example.
 
 | Development dependencies | Use |
@@ -66,3 +68,18 @@ For an intentional dependency change, edit the exact version in
 `bunfig.toml`, and run `bun install`. Restore frozen installs immediately,
 review the lockfile changes, and run the applicable checks. Commit the exact
 manifest and lockfile together. Do not commit relaxed installation settings.
+
+## Preview publication
+
+Set a new exact package version before each release. The manual
+`Publish preview` GitHub workflow runs only on `main`. It verifies both
+React versions and the production browser example, then publishes the same
+archive used by the React 18 consumer checks to the `next` npm tag with
+provenance. Configure `NPM_TOKEN` in the repository's Actions secrets with
+publish access to `@enbox/react`.
+
+Dispatch the workflow after merging the release change:
+
+```sh
+gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
+```

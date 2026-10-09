@@ -1,0 +1,24 @@
+{
+  "name": "enbox-react-react18-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "@enbox/browser": "0.3.79",
+    "@enbox/react": "file:../../../.artifacts/enbox-react.tgz",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@enbox/api": "0.6.87",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "22.19.15",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { EnboxProvider, useConnection, useConnectionActions, useEnbox, useIdentity } from '../src/index.js';
 import { connected, controlledClient } from './helpers.js';
@@ -99,6 +99,11 @@ describe('connection bindings', () => {
   });
 
   it('requires a provider', () => {
-    expect(() => renderHook(useEnbox)).toThrow('EnboxProvider');
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => renderHook(useEnbox)).toThrow('EnboxProvider');
+    } finally {
+      report.mockRestore();
+    }
   });
 });

@@ -31,11 +31,12 @@
     "example:dev": "vite --config examples/notes/vite.config.ts",
     "example:build": "vite build --config examples/notes/vite.config.ts",
     "example:preview": "vite preview --config examples/notes/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort",
-    "prepack": "bun run build"
+    "prepack": "bun run build",
+    "test:react18": "bun run build && node scripts/test-react18.mjs"
   },
   "peerDependencies": {
     "@enbox/browser": "0.3.79",
-    "react": "19.3.0"
+    "react": "18.3.1 || 19.3.0"
   },
   "dependencies": {
     "use-sync-external-store": "1.7.0"
@@ -57,5 +58,9 @@
     "vitest": "4.1.11",
     "workbox-precaching": "7.4.0",
     "workbox-routing": "7.4.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
   }
 }
