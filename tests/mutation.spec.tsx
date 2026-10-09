@@ -8,6 +8,25 @@ import { EnboxMutationObserver } from '../src/internal/mutation-observer.js';
 import { connected, controlledClient, deferred, facade, subscribeObserver } from './helpers.js';
 
 describe('session-bound mutations', () => {
+  it('lets callers guard UI effects after an issued write outlives its session', async () => {
+    const initial = connected();
+    const { client, publish } = controlledClient(initial);
+    const writing = deferred<string>();
+    const hook = renderHook(() => useEnboxMutation(async () => writing.promise), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    const captured = hook.result.current;
+    expect(captured.isCurrent()).toBe(true);
+    let issued!: Promise<string>;
+    act(() => { issued = captured.run(undefined); });
+    act(() => publish(connected(facade(), 'did:example:bob')));
+    expect(captured.isCurrent()).toBe(false);
+    await act(async () => { writing.resolve('saved'); await issued; });
+    expect(captured.isCurrent()).toBe(false);
+    expect(hook.result.current.isCurrent()).toBe(true);
+    hook.unmount();
+    expect(hook.result.current.isCurrent()).toBe(false);
+  });
   it('clears pending presentation even when connection cleanup throws', async () => {
     const initial = connected();
     const { client } = controlledClient(initial);

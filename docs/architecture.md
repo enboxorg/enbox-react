@@ -29,8 +29,13 @@ subscriptions are released when their consumers unmount or React deactivates
 those consumers.
 
 `useObservableStore` borrows a synchronous observable and never closes it.
-`useRecordView` and `useRecords` own the views opened for their consumers.
-Each record hook has its own pagination state and view lifetime.
+The opener and protocol overloads of `useRecordView` and `useRecords` own
+their views. Each has independent pagination state and a view lifetime.
+Both hooks also borrow a `RecordStore` created with `createRecordStore`.
+Such a store is shared with headless controllers; its owner closes it or
+aborts its scope signal. The first subscriber or readiness waiter starts the
+view, and consumer unsubscription does not retire it. Supplied stores carry
+their own scope and need no provider.
 
 ## Connection bindings
 
@@ -58,6 +63,12 @@ subscriber starts an opening attempt; its last subscriber cancels that
 attempt and releases the view. A later subscription starts a fresh attempt.
 This supports Strict Mode replay and React Activity without retaining closed
 resources.
+
+Shared stores use the same observer with an owner lifetime. `ready()` waits
+for usable rows and allows independent waiter cancellation. Owner `close()`
+is terminal, publishes idle, and waits for cleanup of acquired views. A late
+opening is closed when it resolves. An owner signal invalidates the store
+immediately, including reads and controls from retained React results.
 
 Each attempt has an abort controller, an opening Promise, and any attached
 view, subscription, or pagination Promise. Replacing an attempt registers its
@@ -129,6 +140,9 @@ the invocation's Promise preserves the original rejection.
 Issued writes can complete after replacement or unmount. Application code
 must guard its own work after `await`, including draft clearing or navigation,
 against changes to the session, selected context, and component lifetime.
+The captured mutation's `isCurrent()` checks its active connection binding
+before those UI effects. It does not validate an application's selected record
+or draft version.
 
 ## Server rendering and browser startup
 

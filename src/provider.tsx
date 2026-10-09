@@ -33,9 +33,13 @@ export function EnboxProvider({
 
 /** Returns the borrowed native client for advanced SDK actions. */
 export function useEnboxClient(): ConnectionStore {
-  const client = useContext(EnboxContext);
+  const client = useOptionalEnboxClient();
   if (client === undefined) {
     throw new Error('Enbox hooks require an EnboxProvider.');
   }
   return client;
+}
+
+export function useOptionalEnboxClient(): ConnectionStore | undefined {
+  return useContext(EnboxContext);
 }

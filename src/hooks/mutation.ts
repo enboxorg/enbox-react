@@ -14,6 +14,8 @@ export type EnboxMutation<Variables, Result> = (enbox: Enbox, variables: Variabl
 export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot & Readonly<{
   run: (variables: Variables) => Promise<Result>;
   reset: () => void;
+  /** Check before caller UI effects after an issued write finishes. */
+  isCurrent: () => boolean;
 }>;
 
 /** Invokes once through the rendered session; never redirects old UI to a new identity. */
@@ -37,7 +39,7 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
     [observer, operation],
   );
   return useMemo(
-    () => Object.freeze({ ...snapshot, run, reset: observer.reset }),
+    () => Object.freeze({ ...snapshot, run, reset: observer.reset, isCurrent: observer.isCurrent }),
     [snapshot, run, observer],
   );
 }

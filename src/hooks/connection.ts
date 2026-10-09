@@ -31,10 +31,18 @@ export function useConnection<Selection>(
   isEqual?: EqualityFn<Selection>,
 ): ConnectionSnapshot | Selection {
   const client = useEnboxClient();
-  const subscribe = useCallback((notify: () => void) => client.subscribe(notify), [client]);
-  const getSnapshot = useCallback(() => client.getSnapshot(), [client]);
-  // The no-selector overload returns ConnectionSnapshot; this cast is internal.
-  const select = selector ?? (identity as ConnectionSelector<Selection>);
+  return useConnectionStore(client, selector ?? (identity as ConnectionSelector<Selection>), isEqual);
+}
+
+const noop = (): void => {};
+
+export function useConnectionStore<Selection>(
+  client: ConnectionStore | undefined,
+  select: ConnectionSelector<Selection>,
+  isEqual?: EqualityFn<Selection>,
+): Selection {
+  const subscribe = useCallback((notify: () => void) => client?.subscribe(notify) ?? noop, [client]);
+  const getSnapshot = useCallback(() => client?.getSnapshot() ?? SERVER_CONNECTION, [client]);
   return useSyncExternalStoreWithSelector(
     subscribe,
     getSnapshot,

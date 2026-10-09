@@ -40,9 +40,12 @@ test('the built package imports without browser globals and leaves client startu
   const client = config.createEnboxClient({
     application: config.defineApplicationManifest({ protocols: [protocol] }),
   });
+  const records = config.createRecordStore(async () => { throw new Error('Construction must stay inert.'); });
   try {
     assert.equal(client.getSnapshot().phase, 'initializing');
+    assert.equal(records.getSnapshot().status, 'loading');
   } finally {
+    await records.close();
     await client.dispose();
   }
 });
