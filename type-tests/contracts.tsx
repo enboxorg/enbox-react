@@ -2,7 +2,7 @@ import type { TypedMaterializedRecord, TypedRecord } from '@enbox/browser';
 import type { RecordsOptions, RecordsResult } from '@enbox/react';
 
 import { EnboxProvider, useEnboxMutation, useProtocol, useRecords } from '@enbox/react';
-import { createEnboxClient, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
+import { createEnboxClient, createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
 
 type Note = { title: string };
 type Folder = { name: string };
@@ -17,9 +17,18 @@ const protocol = defineProtocol({
 } as const, { folder: recordCodecs.json<Folder>(), note: recordCodecs.json<Note>() });
 const application = defineApplicationManifest({ protocols: [protocol] });
 const client = createEnboxClient({ application, wallet: { appName: 'Notes' } });
+const shared = createRecordStore(async (signal) => client.getSnapshot().enbox!
+  .using(protocol).records.observe('folder/note', {
+    within: 'parent', materialize: true, pagination: { limit: 10 }, signal,
+  }));
 
 export function Contract(): React.ReactNode {
   const bound = useProtocol(protocol);
+  const sharedRows = useRecords(shared);
+  const sharedTitle: string | undefined = sharedRows.records[0]?.value.title;
+  void sharedTitle;
+  // @ts-expect-error shared stores preserve decoded record types
+  sharedRows.records[0]?.value.name;
   const handles = useRecords(protocol, 'folder/note', { within: 'parent', pagination: { limit: 10 } });
   const handle: TypedRecord<Note> | undefined = handles.records[0];
   const values = useRecords(protocol, 'folder/note', {
@@ -37,6 +46,8 @@ export function Contract(): React.ReactNode {
   const create = useEnboxMutation(async (enbox, data: Note) =>
     enbox.using(protocol).records.create('folder/note', { data, parentContextId: 'parent' }));
   const result: Promise<TypedRecord<Note>> = create.run({ title: 'Hello' });
+  const current: boolean = create.isCurrent();
+  void current;
   void result;
   void handle;
   void title;

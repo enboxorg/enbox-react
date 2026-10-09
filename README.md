@@ -133,12 +133,46 @@ Pass `null` options or `enabled: false` to release a view and return idle.
 it can be false while useful saved data remains visible. The SDK drives live
 changes without a polling or cache-invalidation loop.
 
+## Share records with application controllers
+
+When startup, search, or other controllers also read a catalog, create one
+store for that application scope:
+
+```ts
+import { createRecordStore } from '@enbox/react/config';
+
+const notes = createRecordStore((signal) =>
+  enbox.using(NotesProtocol).records.observe('note', {
+    materialize: true,
+    pagination: { limit: 20 },
+    signal,
+  }), { signal: workspaceLifetime.signal });
+
+const stop = notes.subscribe(() => updateIndex(notes.getSnapshot().records));
+await notes.ready();
+```
+
+React consumers use `useRecords(notes)` or `useRecordView(notes)`. They share
+the controller's view and pagination. Unmounting one consumer leaves the
+store available to the others. No provider is required for a supplied store.
+Construction is inert. The first subscriber or `ready()` starts the view,
+which stays open until the owner calls `notes.close()` or its lifetime signal
+aborts. Release controller subscriptions with `stop()` when retiring them.
+
+The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
+opener overload `useRecordView(opener)` own a view for each hook instead.
+
+## Mutations
+
 Mutation runners check the rendered facade and session before executing and
 reject obsolete bindings. Each invocation has its own Promise. `pendingCount`
 counts current work, the latest invocation owns the displayed error, and
 `reset()` clears that error without cancelling writes. Issued operations can
 finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
+Use the captured mutation's `isCurrent()` before UI effects after `await` to
+check that its connection binding is still active. Selection and draft guards
+remain application decisions.
 
 The mutation runner captures the operation passed by that render. Its identity
 is stable while that operation and session binding are stable; use

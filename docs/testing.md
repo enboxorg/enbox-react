@@ -70,6 +70,10 @@ shell, not a remote write queue or shared-context editing behavior.
 
 ## React compatibility
 
+Shared-store regressions exercise one native view across React and headless
+consumers, readiness cancellation, late opening, owner abort, and async close.
+Mutation tests cover caller guards after session replacement.
+
 The React 18 consumer fixture installs the packed SDK with its own renderer
 and React declarations. It runs the same applicable regression cases and
 public type contracts; React Activity is exercised only by the React 19 suite.

@@ -104,9 +104,8 @@ export class EnboxMutationObserver {
     }
   }
 
-  private isCurrent(): boolean {
-    return isConnectionBindingCurrent(this._client, this._expected);
-  }
+  public readonly isCurrent = (): boolean => this._active
+    && isConnectionBindingCurrent(this._client, this._expected);
 
   private canPublish(generation: number): boolean {
     return this._active && generation === this._generation && this.isCurrent();

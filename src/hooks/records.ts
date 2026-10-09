@@ -15,7 +15,7 @@ import { useMemo } from 'react';
 
 import type { RecordViewResult } from './record-view.js';
 import { useRecordViewBinding } from './record-view.js';
-import { useConnection, useProtocol } from './connection.js';
+import { useConnectionStore } from './connection.js';
 import { serializeQuery } from '../internal/serialize-query.js';
 import {
   isConnectionBindingCurrent,
@@ -23,7 +23,8 @@ import {
   selectConnectionBinding,
   subscribeToConnectionBinding,
 } from '../internal/connection-binding.js';
-import { useEnboxClient } from '../provider.js';
+import { useOptionalEnboxClient } from '../provider.js';
+import { isRecordStore, type RecordStore } from '../config/record-store.js';
 
 export type RecordsOptions<
   Definition extends ProtocolDefinition,
@@ -40,6 +41,7 @@ export type RecordsResult<Item> = RecordViewResult<Item> & Readonly<{
 }>;
 
 /** Observe a bounded selection; null options or enabled: false release it. */
+export function useRecords<Item>(store: RecordStore<Item> | null): RecordsResult<Item>;
 export function useRecords<
   Definition extends ProtocolDefinition,
   Codecs extends TypedProtocol['codecs'],
@@ -77,18 +79,21 @@ export function useRecords<
   Codecs extends TypedProtocol['codecs'],
   RoleGroups extends ContextRoleGroups,
   const Path extends ProtocolPaths<Definition> & string,
+  Item,
 >(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  options: RecordsOptions<Definition, NoInfer<Path>> | null,
+  protocol: TypedProtocol<Definition, Codecs, RoleGroups> | RecordStore<Item> | null,
+  path?: Path,
+  options?: RecordsOptions<Definition, NoInfer<Path>> | null,
 ): RecordsResult<
-  TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
+  Item | TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
 > {
-  const client = useEnboxClient();
-  const expected = useConnection(selectConnectionBinding, sameConnectionBinding);
-  const typedEnbox = useProtocol(protocol);
-  const enabled = options !== null && options.enabled !== false;
-  const serializedQuery = options === null ? null : serializeQuery({
+  const borrowed = protocol === null || isRecordStore<Item>(protocol);
+  const client = useOptionalEnboxClient();
+  const expected = useConnectionStore(borrowed ? undefined : client, selectConnectionBinding, sameConnectionBinding);
+  const typedEnbox = useMemo(() => borrowed ? undefined
+    : expected.enbox?.using<Definition, Codecs, RoleGroups>(protocol), [borrowed, expected.enbox, protocol]);
+  const enabled = options != null && options.enabled !== false;
+  const serializedQuery = options == null ? null : serializeQuery({
     from: options.from,
     within: options.within,
     protocolRole: options.protocolRole,
@@ -98,11 +103,12 @@ export function useRecords<
     materialize: options.materialize,
   });
   const bindingGuard = useMemo(() => ({
-    isCurrent: () => isConnectionBindingCurrent(client, expected),
-    subscribe: (notify: () => void) => subscribeToConnectionBinding(client, expected, notify),
+    isCurrent: () => client !== undefined && isConnectionBindingCurrent(client, expected),
+    subscribe: (notify: () => void) => client === undefined ? () => {}
+      : subscribeToConnectionBinding(client, expected, notify),
   }), [client, expected]);
   const opener = useMemo(() => {
-    if (!enabled || typedEnbox === undefined || serializedQuery === null) return null;
+    if (!enabled || path === undefined || typedEnbox === undefined || serializedQuery === null) return null;
     // Own a copy of the serialized request so caller mutations cannot change it.
     const request = JSON.parse(serializedQuery) as Omit<RecordQuery<Definition, Path>, 'pagination'> & {
       pagination: { limit: number };
@@ -114,10 +120,12 @@ export function useRecords<
       : typedEnbox.records.observe(path, { ...query, signal });
   }, [typedEnbox, path, serializedQuery, enabled]);
   const { snapshot, observer } = useRecordViewBinding<
-    TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
-  >(opener, bindingGuard);
-  return useMemo(
+    Item | TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
+  >(borrowed ? protocol as RecordStore<Item> | null : opener, borrowed ? undefined : bindingGuard);
+  const result = useMemo(
     () => Object.freeze({ ...snapshot, loadMore: observer.loadMore }),
     [snapshot, observer],
   );
+  if (!borrowed && client === undefined) throw new Error('Enbox hooks require an EnboxProvider.');
+  return result;
 }

@@ -54,12 +54,15 @@ export class RecordViewObserver<Item> {
   private _snapshot: RecordViewResult<Item>;
   private _viewState: RecordViewState<Item> | IdleRecordViewState<Item> = IDLE;
   private _active = false;
+  private _closed = false;
   private _attempt: ViewAttempt<Item> | undefined;
   private _unsubscribeBinding: (() => void) | undefined;
+  private readonly _closing = new Set<Promise<void>>();
 
   public constructor(
     private readonly _opener: RecordViewOpener<Item> | null,
     private readonly _bindingGuard?: BindingGuard,
+    private readonly _keepAlive = false,
   ) {
     this._idle = this.result(IDLE, false);
     this._loading = this.result(LOADING, false);
@@ -68,19 +71,56 @@ export class RecordViewObserver<Item> {
   }
 
   public readonly getSnapshot = (): RecordViewResult<Item> =>
-    this.isBindingCurrent() ? this._snapshot : this._idle;
+    !this._closed && this.isBindingCurrent() ? this._snapshot : this._idle;
 
   public readonly getServerSnapshot = (): RecordViewResult<Item> => this._idle;
 
   public readonly subscribe = (notify: () => void): (() => void) => {
+    if (this._closed) return () => {};
     const listener = (): void => { notify(); };
     this._listeners.add(listener);
-    if (this._listeners.size === 1) this.start();
+    if (!this._active) this.start();
     return () => {
       if (!this._listeners.delete(listener)) return;
-      if (this._listeners.size === 0) this.stop();
+      if (this._listeners.size === 0 && !this._keepAlive) this.stop();
     };
   };
+
+  /** Terminal release by a shared store's owner; hook unsubscription is reversible. */
+  public readonly close = async (): Promise<void> => {
+    if (!this._closed) {
+      this._closed = true;
+      this.stop();
+      this._listeners.clear();
+    }
+    await Promise.all(this._closing);
+  };
+
+  /** Wait for usable rows while retaining the store for this operation. */
+  public readonly ready = (options: { signal?: AbortSignal } = {}): Promise<
+    Extract<RecordViewResult<Item>, { status: 'ready' }>
+  > => new Promise((resolve, reject) => {
+    let unsubscribe: (() => void) | undefined;
+    let settled = false;
+    const finish = (error?: unknown): void => {
+      if (settled) return;
+      const state = this.getSnapshot();
+      if (error === undefined && state.status !== 'ready' && state.status !== 'error'
+        && !this._closed && this._opener !== null && this.isBindingCurrent()) return;
+      settled = true;
+      unsubscribe?.();
+      options.signal?.removeEventListener('abort', abort);
+      if (error !== undefined) reject(error);
+      else if (state.status === 'ready') resolve(state);
+      else reject(state.status === 'error' ? state.error : new EnboxBindingChangedError());
+    };
+    const abort = (): void => finish(options.signal?.reason ?? new EnboxBindingChangedError());
+    if (options.signal?.aborted) { abort(); return; }
+    options.signal?.addEventListener('abort', abort, { once: true });
+    unsubscribe = this.subscribe(() => finish());
+    if (settled) unsubscribe();
+    else finish();
+  });
 
   private start(): void {
     this._active = true;
@@ -246,10 +286,15 @@ export class RecordViewObserver<Item> {
   }
 
   private closeView(view: RecordView<Item>): void {
+    let finish!: () => void;
+    const closing = new Promise<void>((resolve) => { finish = resolve; });
+    this._closing.add(closing);
+    const complete = (): void => { this._closing.delete(closing); finish(); };
     try {
-      void view.close().catch(reportCleanupError);
+      void Promise.resolve(view.close()).catch(reportCleanupError).then(complete);
     } catch (cause: unknown) {
       reportCleanupError(cause);
+      complete();
     }
   }
 

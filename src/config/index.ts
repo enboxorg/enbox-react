@@ -1,5 +1,7 @@
 export { createEnboxClient } from './client.js';
 export type { CreateEnboxClientOptions } from './client.js';
+export { createRecordStore } from './record-store.js';
+export type { RecordStore, RecordStoreOptions } from './record-store.js';
 
 export {
   DateSort,
