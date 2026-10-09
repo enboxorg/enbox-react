@@ -1,8 +1,10 @@
 # Testing
 
 Run `bun run check` for the library, type contracts, configuration files, and
-built-package tests. Run `bun run test:browser` for the production Notes
-example. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and dependency
+built-package tests. Run `bun run test:react18` to validate the installed
+archive with React 18.3.1; the authoring suite uses React 19.3.0. Run
+`bun run test:browser` for the production Notes example.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and dependency
 changes.
 
 ## Test boundaries
@@ -65,3 +67,12 @@ approval and delegated remote replication need separate integration runs.
 Plain SSR is covered; a framework-specific server-component application is
 not part of the automated fixtures. Offline testing verifies the application
 shell, not a remote write queue or shared-context editing behavior.
+
+## React compatibility
+
+The React 18 consumer fixture installs the packed SDK with its own renderer
+and React declarations. It runs the same applicable regression cases and
+public type contracts; React Activity is exercised only by the React 19 suite.
+The generated consumer lives in `.artifacts`, and all registry dependencies
+are frozen by the fixture's committed lockfile. Only the local SDK archive
+checksum is refreshed as its source changes.
