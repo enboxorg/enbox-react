@@ -16,6 +16,13 @@ export type CreateEnboxClientOptions = {
   | { connectHandler: ConnectHandler; wallet?: never }
 );
 
+const clientWalletOptions = new WeakMap<ConnectionStore, BrowserConnectHandlerOptions>();
+
+/** Factory metadata used by providers without changing the native client type. */
+export function getClientWalletOptions(client: ConnectionStore): BrowserConnectHandlerOptions | undefined {
+  return clientWalletOptions.get(client);
+}
+
 /**
  * Creates an inert, application-owned ConnectionStore. Initialization and
  * disposal retain the native SDK contract. Interactive renewal is opt-in.
@@ -30,13 +37,16 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
     }
   }
 
-  const connectHandler = options.connectHandler ?? createWalletConnectHandler(options.wallet);
+  const wallet = options.connectHandler === undefined ? Object.freeze({ ...options.wallet }) : undefined;
+  const connectHandler = options.connectHandler ?? createWalletConnectHandler(wallet);
 
-  return createConnectionStore({
+  const client = createConnectionStore({
     ...options.connection,
     application: options.application,
     connectHandler,
   });
+  if (wallet !== undefined) clientWalletOptions.set(client, wallet);
+  return client;
 }
 
 /** Resolve browser URLs when approval starts, so configuration stays inert. */

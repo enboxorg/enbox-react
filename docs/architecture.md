@@ -41,6 +41,11 @@ aborts its scope signal. The first subscriber or readiness waiter starts the
 view, and consumer unsubscription does not retire it. Supplied stores carry
 their own scope and need no provider.
 
+`useContextView` and `createContextStore` apply the same ownership rules to
+native context catalogs. Both adapters share the internal owned-view observer;
+record pagination stays in the record adapter. Context results preserve the
+native `contexts` state without adding record-only freshness or pagination.
+
 ## Connection bindings
 
 `useEnboxConnection` combines native snapshots with a provider-scoped workflow
@@ -53,11 +58,22 @@ guard. Raw snapshot hooks retain their native contracts.
 ## Profile resources
 
 Profile observers are inert during render. Their first subscription retains a
-shared native reader for the source and watches the selected DIDs. Image leases
+shared native lazy reader for the source and watches the selected DIDs. Each
+result exposes resolved display fields and native status/failure metadata.
+Observers select eager, lazy, or off image policy. Eager observers request
+images automatically; lazy observers request them through `loadImages()`.
+Requests coalesce across observers. Text-only observers acquire no image
+leases, even when a sibling loads images. Aggregate status reflects only
+requested fields, while field metadata preserves the shared reader's state.
+Image leases
 are reused by Blob identity and released with a grace period for DOM consumers.
 The last observer releases the reader after Strict Mode replay. A retained
 observer can reacquire a reader after retirement; callbacks from earlier watch
 generations cannot publish into the resumed observer.
+
+Initial synchronous watch emissions are batched into one complete selection.
+Native immutable snapshot identity avoids rebuilding unchanged DID results.
+Metadata changes publish a new result without replacing unchanged image leases.
 
 ## Rendered authorization
 
@@ -138,7 +154,10 @@ React lifetime, and the hook owns the abort signal; neither is a query key.
 A positive safe-integer `pagination.limit` bounds retained rows. The native
 SDK validates the query. Nested paths require an exact `within` context ID.
 Without materialization, rows are native typed record handles. With
-`materialize: true`, rows contain the handle and decoded value. Codecs provide
+`materialize: true`, rows contain the handle and decoded value. Object
+materialization preserves the SDK's selected direct singleton children and
+infers each child's codec. Singleton eligibility derives from the native
+`set` contract. Codecs provide
 TypeScript inference; a codec validator provides runtime payload validation.
 
 ## Mutations

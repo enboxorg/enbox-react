@@ -1,12 +1,39 @@
+import type { ContextView } from '@enbox/browser';
+
 import { Activity } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { EnboxProvider, useEnboxClient, useRecordView } from '../src/index.js';
+import { EnboxProvider, useContextView, useEnboxClient, useRecordView } from '../src/index.js';
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
 import { ControlledView } from './helpers.js';
 
 describe('React Activity', () => {
+  it('reopens a context catalog when retained effects resume', async () => {
+    const closes: ReturnType<typeof vi.fn<() => Promise<void>>>[] = [];
+    const open = async () => {
+      const state = Object.freeze({ status: 'ready' as const, contexts: Object.freeze(['visible']) });
+      const close = vi.fn(async () => {});
+      closes.push(close);
+      return {
+        getSnapshot: () => state, subscribe: () => () => {}, ready: async () => state, close,
+      } satisfies ContextView<string>;
+    };
+    function Content() {
+      const state = useContextView(open);
+      return <output>{state.status}</output>;
+    }
+    const tree = render(<Activity mode="visible"><Content /></Activity>);
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    tree.rerender(<Activity mode="hidden"><Content /></Activity>);
+    expect(closes[0]).toHaveBeenCalledOnce();
+    tree.rerender(<Activity mode="visible"><Content /></Activity>);
+    await waitFor(() => expect(closes.length).toBe(2));
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    tree.unmount();
+    expect(closes.every((close) => close.mock.calls.length === 1)).toBe(true);
+  });
+
   it('replaces a retired owned client when Effects resume', async () => {
     const clients: ReturnType<typeof useEnboxClient>[] = [];
     function Content() {

@@ -1,8 +1,8 @@
 import type { TypedMaterializedRecord, TypedRecord } from '@enbox/browser';
 import type { RecordsOptions, RecordsResult } from '@enbox/react';
 
-import { EnboxProvider, useEnboxConnection, useEnboxMutation, useProfile, useProtocol, useRecords } from '@enbox/react';
-import { createEnboxClient, createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
+import { EnboxProvider, useContextView, useEnboxConnection, useEnboxMutation, useProfile, useProfiles, useProtocol, useRecords } from '@enbox/react';
+import { createContextStore, createEnboxClient, createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
 
 type Note = { title: string };
 type Folder = { name: string };
@@ -26,6 +26,16 @@ export function Contract(): React.ReactNode {
   const bound = useProtocol(protocol);
   const connection = useEnboxConnection();
   const profileName: string | undefined = useProfile(connection.enbox, connection.did).displayName;
+  const profile = useProfile(connection.enbox, connection.did, { images: 'lazy' });
+  const status: 'idle' | 'loading' | 'settled' | 'not-found' | 'error' = profile.status;
+  const imageRequest: Promise<void> = profile.loadImages();
+  const profiles = useProfiles(connection.enbox, [connection.did ?? ''], { images: 'off' });
+  const profileFailure: string | undefined = profiles.get(connection.did ?? '')?.fields.profile.failure?.message;
+  void status;
+  void imageRequest;
+  void profileFailure;
+  // @ts-expect-error image policy is restricted to the supported modes
+  useProfile(connection.enbox, connection.did, { images: 'all' });
   void profileName;
   void connection.disconnect({ skipBeforeDisconnect: true });
   // @ts-expect-error per-call wallet and handler configuration are mutually exclusive
@@ -58,6 +68,12 @@ export function Contract(): React.ReactNode {
   void handle;
   void title;
   void idle;
+  const contexts = createContextStore(async () => bound!.contexts.observe());
+  const contextState = useContextView(contexts);
+  const selectedContext = contextState.contexts[0];
+  void selectedContext;
+  // @ts-expect-error context catalogs preserve the native contexts shape
+  contextState.records;
   // @ts-expect-error invalid literal path
   useRecords(protocol, 'other', { pagination: { limit: 1 } });
   // @ts-expect-error nested views require the exact context selector

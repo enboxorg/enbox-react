@@ -57,8 +57,10 @@ for (const entry of readdirSync(join(root, 'tests'), { withFileTypes: true })) {
   });
   writeFileSync(join(generated, 'tests', entry.name), installed);
 }
-writeFileSync(join(generated, 'type-tests/contracts.tsx'),
-  readFileSync(join(root, 'type-tests/contracts.tsx'), 'utf8'));
+for (const entry of readdirSync(join(root, 'type-tests'), { withFileTypes: true })) {
+  if (!entry.isFile() || !/\.(ts|tsx)$/.test(entry.name)) continue;
+  cpSync(join(root, 'type-tests', entry.name), join(generated, 'type-tests', entry.name));
+}
 writeFileSync(join(generated, 'tests/react-version.spec.ts'), `
 import { version } from 'react';
 import { expect, it } from 'vitest';

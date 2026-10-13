@@ -10,7 +10,89 @@ const protocol = defineProtocol({
   types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
 } as const, { note: recordCodecs.json<{ title: string }>() });
 
+const childProtocol = defineProtocol({
+  protocol: 'https://example.test/notes-with-children', published: false,
+  types: {
+    note: { dataFormats: ['application/json'] },
+    preview: { dataFormats: ['application/json'] },
+    stats: { dataFormats: ['application/json'] },
+  },
+  structure: {
+    note: { preview: { $recordLimit: { max: 1 } }, stats: { $recordLimit: { max: 1 } } },
+  },
+} as const, {
+  note: recordCodecs.json<{ title: string }>(),
+  preview: recordCodecs.json<{ body: string }>(),
+  stats: recordCodecs.json<{ words: number }>(),
+});
+
 describe('typed record selection', () => {
+  it('forwards child selections and keeps equivalent requests on the same view', async () => {
+    const views: ControlledView<never>[] = [];
+    const observe = vi.fn(async (_path, _request) => {
+      const view = new ControlledView<never>();
+      views.push(view);
+      return view;
+    });
+    const { client } = controlledClient(connected(facade(vi.fn(() => ({ records: { observe } })))));
+    const hook = renderHook(({ child }: { child: 'note/preview' | 'note/stats' }) =>
+      useRecords(childProtocol, 'note', {
+        pagination: { limit: 10 }, materialize: { children: [child] },
+      }), {
+      initialProps: { child: 'note/preview' },
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+    expect(observe.mock.calls[0]?.[1].materialize).toEqual({ children: ['note/preview'] });
+    hook.rerender({ child: 'note/preview' });
+    expect(observe).toHaveBeenCalledOnce();
+    hook.rerender({ child: 'note/stats' });
+    await waitFor(() => expect(observe).toHaveBeenCalledTimes(2));
+    expect(observe.mock.calls[1]?.[1].materialize).toEqual({ children: ['note/stats'] });
+    expect(views[0]?.close).toHaveBeenCalledOnce();
+    hook.unmount();
+    expect(views[1]?.close).toHaveBeenCalledOnce();
+  });
+
+  it('copies child selections before opening so caller mutations cannot change the request', async () => {
+    const observe = vi.fn(async (_path, _request) => new ControlledView<never>());
+    const { client } = controlledClient(connected(facade(vi.fn(() => ({ records: { observe } })))));
+    const children: ('note/preview' | 'note/stats')[] = ['note/preview'];
+    const hook = renderHook(() => useRecords(childProtocol, 'note', {
+      pagination: { limit: 1 }, materialize: { children },
+    }), { wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider> });
+    await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+    children.push('note/stats');
+    expect(observe.mock.calls[0]?.[1].materialize).toEqual({ children: ['note/preview'] });
+    hook.unmount();
+  });
+
+  it('rejects unknown materialization keys even when their undefined values would be omitted', () => {
+    const observe = vi.fn(async () => new ControlledView<never>());
+    const { client } = controlledClient(connected(facade(vi.fn(() => ({ records: { observe } })))));
+    expect(() => renderHook(() => useRecords(childProtocol, 'note', {
+      pagination: { limit: 1 },
+      materialize: { children: ['note/preview'], extra: undefined } as never,
+    }), { wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider> }))
+      .toThrow('Record materialization supports only the children selection.');
+    expect(observe).not.toHaveBeenCalled();
+  });
+
+  it.each([{ children: [] }, { children: ['note/preview', 'note/preview'] }, false, null])(
+    'forwards malformed JavaScript materialization %j for native validation', async (materialize) => {
+      const error = new TypeError('Native materialization validation failed.');
+      const observe = vi.fn(async (_path, _request) => { throw error; });
+      const { client } = controlledClient(connected(facade(vi.fn(() => ({ records: { observe } })))));
+      const hook = renderHook(() => useRecords(childProtocol, 'note', {
+        pagination: { limit: 1 }, materialize: materialize as never,
+      }), { wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider> });
+      await waitFor(() => expect(hook.result.current.status).toBe('error'));
+      expect(observe.mock.calls[0]?.[1].materialize).toEqual(materialize);
+      expect(hook.result.current.error).toBe(error);
+      hook.unmount();
+    },
+  );
+
   it('releases the old client binding even when both clients publish the same session and facade', async () => {
     const views: ControlledView<never>[] = [];
     const observe = vi.fn(async () => {

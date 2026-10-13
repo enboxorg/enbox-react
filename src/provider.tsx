@@ -4,7 +4,7 @@ import type { ConnectionStore } from '@enbox/browser';
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createEnboxClient, type CreateEnboxClientOptions } from './config/client.js';
+import { createEnboxClient, getClientWalletOptions, type CreateEnboxClientOptions } from './config/client.js';
 import { ConnectionController, type ConnectionPolicy } from './internal/connection-controller.js';
 
 type ProviderContext = ConnectionPolicy & Readonly<{
@@ -67,14 +67,13 @@ function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonPro
       });
     };
   }, [initializeOnMount]);
-  return <ClientContext {...props} client={client} wallet={scope.config.wallet} />;
+  return <ClientContext {...props} client={client} />;
 }
 
-function ClientContext({ client, wallet, beforeConnect, beforeDisconnect, children }: CommonProps & {
+function ClientContext({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
   client: ConnectionStore;
-  wallet?: CreateEnboxClientOptions['wallet'];
 }) {
-  const controller = useMemo(() => new ConnectionController(client, wallet), [client, wallet]);
+  const controller = useMemo(() => new ConnectionController(client, getClientWalletOptions(client)), [client]);
   const value = useMemo(() => ({ client, controller, beforeConnect, beforeDisconnect }),
     [client, controller, beforeConnect, beforeDisconnect]);
   return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;
