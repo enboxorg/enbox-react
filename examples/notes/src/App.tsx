@@ -1,23 +1,18 @@
 import type { FormEvent } from 'react';
 
-import { isConnectDeniedError } from '@enbox/browser';
 import { useState } from 'react';
 import {
   EnboxProvider,
-  useConnection,
-  useConnectionActions,
-  useEnboxClient,
+  useEnboxConnection,
   useEnboxMutation,
   useRecords,
 } from '@enbox/react';
 
 import type { Note } from './application.js';
-import { NotesProtocol } from './application.js';
-import { client } from './client.js';
+import { config, NotesProtocol } from './application.js';
 
 function Notes() {
   const [title, setTitle] = useState('');
-  const store = useEnboxClient();
   const notes = useRecords(NotesProtocol, 'note', { materialize: true, pagination: { limit: 20 } });
   const create = useEnboxMutation(async (enbox, data: Note) =>
     enbox.using(NotesProtocol).records.create('note', { data }));
@@ -27,11 +22,9 @@ function Notes() {
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const submitted = title.trim();
-    const expected = store.getSnapshot();
     try {
       await create.run({ title: submitted });
-      const current = store.getSnapshot();
-      if (current.enbox === expected.enbox && current.session === expected.session) {
+      if (create.isCurrent()) {
         setTitle((draft) => draft.trim() === submitted ? '' : draft);
       }
     } catch {
@@ -67,24 +60,23 @@ function Notes() {
 }
 
 function WalletNotes() {
-  const connection = useConnection();
-  const actions = useConnectionActions();
-  const pending = ['initializing', 'connecting', 'disconnecting'].includes(connection.phase);
+  const connection = useEnboxConnection();
+  const pending = connection.isConnecting || connection.isDisconnecting;
   return (
     <main>
       <h1>My notes</h1>
       <p>Private notes saved with your wallet.</p>
-      {connection.error && !isConnectDeniedError(connection.error) && <p role="alert">{connection.error.message}</p>}
-      {(!connection.enbox || connection.walletReapprovalRequired) && (
-        <button disabled={pending} onClick={() => void actions.connect()}>
-          {pending ? 'Connecting…' : connection.walletReapprovalRequired ? 'Renew wallet access' : 'Connect wallet'}
+      {connection.connectionError && <p role="alert">{connection.connectionError.message}</p>}
+      {(!connection.isConnected || connection.walletRepair) && (
+        <button disabled={pending} onClick={() => { void connection.connect().catch(() => {}); }}>
+          {pending ? 'Connecting…' : connection.walletRepair ? 'Renew wallet access' : 'Connect wallet'}
         </button>
       )}
-      {connection.enbox && (
+      {connection.isConnected && (
         <>
-          <p>{connection.session?.identity.name || 'Wallet connected'}</p>
-          <Notes key={connection.session?.did} />
-          <button disabled={pending} onClick={() => void actions.disconnect()}>Disconnect</button>
+          <p>{connection.identityName || 'Wallet connected'}</p>
+          <Notes key={connection.did} />
+          <button disabled={pending} onClick={() => { void connection.disconnect().catch(() => {}); }}>Disconnect</button>
         </>
       )}
     </main>
@@ -92,5 +84,5 @@ function WalletNotes() {
 }
 
 export function App() {
-  return <EnboxProvider client={client}><WalletNotes /></EnboxProvider>;
+  return <EnboxProvider config={config}><WalletNotes /></EnboxProvider>;
 }
