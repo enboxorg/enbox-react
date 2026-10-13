@@ -30,8 +30,19 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
     }
   }
 
-  const wallet = { ...options.wallet };
-  const connectHandler: ConnectHandler = options.connectHandler ?? {
+  const connectHandler = options.connectHandler ?? createWalletConnectHandler(options.wallet);
+
+  return createConnectionStore({
+    ...options.connection,
+    application: options.application,
+    connectHandler,
+  });
+}
+
+/** Resolve browser URLs when approval starts, so configuration stays inert. */
+export function createWalletConnectHandler(options: BrowserConnectHandlerOptions = {}): ConnectHandler {
+  const wallet = { ...options };
+  return {
     requestAccess: (request) => {
       // Resolve browser URLs when wallet approval starts, so construction is inert.
       const appIcon = wallet.appIcon === undefined
@@ -43,10 +54,4 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
       }).requestAccess(request);
     },
   };
-
-  return createConnectionStore({
-    ...options.connection,
-    application: options.application,
-    connectHandler,
-  });
 }

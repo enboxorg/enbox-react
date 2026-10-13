@@ -17,13 +17,17 @@ exports listed in `src/index.ts` and `src/config/index.ts` are public.
 
 ## Resource ownership
 
-The application creates one `ConnectionStore` for each independent connection
-and retains it for that application's lifetime. `EnboxProvider` borrows the
-store and calls its idempotent `initialize()` after mount unless
-`initializeOnMount` is false. Initialization restores an existing session;
-wallet approval starts through a connection action.
+`EnboxProvider config={options}` owns one native client for its mounted
+scope. Construction is inert; initialization happens after mount. Disposal
+is deferred past Strict Mode replay. Retained UI can resume Effects after
+retirement, so the provider replaces a disposed client before initializing
+the resumed scope. Configuration is fixed for that scope.
 
-Provider unmount does not dispose the store. The application calls
+`EnboxProvider client={store}` borrows an application-owned store and calls
+its idempotent `initialize()` after mount unless `initializeOnMount` is false.
+Initialization restores a session; wallet approval starts through an action.
+
+The borrowed form does not dispose the store. The application calls
 `client.dispose()` when retiring it, or `disconnect()` to sign out. Hook
 subscriptions are released when their consumers unmount or React deactivates
 those consumers.
@@ -38,6 +42,24 @@ view, and consumer unsubscription does not retire it. Supplied stores carry
 their own scope and need no provider.
 
 ## Connection bindings
+
+`useEnboxConnection` combines native snapshots with a provider-scoped workflow
+controller. It derives usable-session flags, labels, wallet repair, and progress
+shared by all consumers. Before-action guards run outside native authentication.
+They are followed by a facade/session check, so delayed guards cannot sign out
+or replace another identity. Disconnect also supersedes a connect waiting on a
+guard. Raw snapshot hooks retain their native contracts.
+
+## Profile resources
+
+Profile observers are inert during render. Their first subscription retains a
+shared native reader for the source and watches the selected DIDs. Image leases
+are reused by Blob identity and released with a grace period for DOM consumers.
+The last observer releases the reader after Strict Mode replay. A retained
+observer can reacquire a reader after retirement; callbacks from earlier watch
+generations cannot publish into the resumed observer.
+
+## Rendered authorization
 
 A connection binding contains the exact Enbox facade and authorization-session
 references read by a render. The client is a separate identity dependency.
