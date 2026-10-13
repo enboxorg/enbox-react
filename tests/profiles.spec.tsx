@@ -1,10 +1,11 @@
-import type { ProfileReaderSource } from '@enbox/browser';
+import type { ProfileReaderSource, ProfileSnapshot } from '@enbox/browser';
 import { StrictMode } from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const snapshots = new Map<string, unknown>();
+  const offSnapshots = new WeakMap<ProfileSnapshot, ProfileSnapshot>();
   const watchers = new Set<() => void>();
   const dispose = vi.fn();
   const watch = vi.fn((dids: readonly string[], notify: () => void) => {
@@ -12,9 +13,22 @@ const mocks = vi.hoisted(() => {
     for (const _did of dids) notify();
     return () => { watchers.delete(notify); };
   });
-  const getSnapshot = vi.fn((did: string) => snapshots.get(did));
+  const getSnapshot = vi.fn((did: string, policy: 'off' | 'eager') => {
+    const snapshot = snapshots.get(did) as ProfileSnapshot | undefined;
+    if (snapshot === undefined || policy !== 'off') return snapshot;
+    let off = offSnapshots.get(snapshot);
+    if (off === undefined) {
+      off = { ...snapshot, status: snapshot.profile.status === 'idle' ? 'loading' : snapshot.profile.status,
+        avatar: { status: 'idle' }, hero: { status: 'idle' },
+      };
+      offSnapshots.set(snapshot, off);
+    }
+    return off;
+  });
   const loadImages = vi.fn(async (_did: string) => ({}));
-  const createReader = vi.fn(() => ({ watch, getSnapshot, loadImages, dispose }));
+  const createReader = vi.fn((_source: ProfileReaderSource, options: { images: 'off' | 'eager' }) => ({
+    watch, getSnapshot: (did: string) => getSnapshot(did, options.images), loadImages, dispose,
+  }));
   let nextUrl = 0;
   const releaseAfter = vi.fn();
   const acquire = vi.fn(() => ({ url: `blob:test-${nextUrl++}`, release: vi.fn(), releaseAfter }));
@@ -87,7 +101,7 @@ describe('public profile bindings', () => {
     await expect(missing.result.current.loadImages()).rejects.toBeInstanceOf(EnboxBindingChangedError);
   });
 
-  it('shares eager reads while text-only observers retain native metadata and avoid image leases', async () => {
+  it('shares eager reads while text-only observers keep their own native metadata and avoid image leases', async () => {
     const enbox = source();
     const text = { status: 'settled', value: { displayName: 'Alice' } };
     mocks.snapshots.set('did:a', {
@@ -97,12 +111,13 @@ describe('public profile bindings', () => {
     const eager = renderHook(() => useProfile(enbox, 'did:a'));
     const second = renderHook(() => useProfile(enbox, 'did:a'));
     const off = renderHook(() => useProfile(enbox, 'did:a', { images: 'off' }));
-    await waitFor(() => expect(mocks.loadImages).toHaveBeenCalledOnce());
-    expect(mocks.createReader).toHaveBeenCalledOnce();
-    expect(mocks.createReader).toHaveBeenCalledWith(enbox, { images: 'lazy' });
+    expect(mocks.loadImages).not.toHaveBeenCalled();
+    expect(mocks.createReader).toHaveBeenCalledTimes(2);
+    expect(mocks.createReader).toHaveBeenCalledWith(enbox, { images: 'eager' });
+    expect(mocks.createReader).toHaveBeenCalledWith(enbox, { images: 'off' });
     expect(eager.result.current.status).toBe('loading');
     expect(off.result.current.status).toBe('settled');
-    expect(off.result.current.fields.avatar.status).toBe('loading');
+    expect(off.result.current.fields.avatar.status).toBe('idle');
 
     mocks.snapshots.set('did:a', {
       did: 'did:a', status: 'settled', profile: text,
@@ -176,7 +191,7 @@ describe('public profile bindings', () => {
     const alice = profile('Alice');
     mocks.snapshots.set('did:a', alice);
     mocks.snapshots.set('did:b', profile('Bob'));
-    const observer = new ProfilesObserver(source(), ['did:a', 'did:b'], 'off');
+    const observer = new ProfilesObserver(source(), ['did:a', 'did:b'], 'eager');
     const notify = vi.fn();
     const stop = observer.subscribe(notify);
     try {

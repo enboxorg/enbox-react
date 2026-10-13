@@ -125,12 +125,18 @@ guards preserve the connected session. An explicit
 owns the decision and its UI. Binding changes during an awaited guard prevent
 the action from targeting a replacement identity.
 
+Provider retirement also invalidates captured connection actions and fences
+guards still awaiting application work. Strict Mode replay preserves them;
+Activity resumption after retirement creates a fresh workflow controller.
+Operations already issued to the native client keep their original Promise
+outcome.
+
 ## Resolve profiles
 
 `useProfile(enbox, did)` reads one published profile; `useProfiles(enbox, dids)`
 returns a map of the same result shape keyed by DID. Each result includes text,
 `avatarUrl`, `heroUrl`, `status`, and native per-field status/failure metadata
-under `fields`. They share one native reader per source, manage image URL
+under `fields`. They share native readers by source and image policy, manage image URL
 leases, and release watches on unmount. Unchanged DID results retain their
 references when another person updates.
 
@@ -152,6 +158,10 @@ calling the result's `loadImages()`. Field failures appear in metadata;
 disabled or retired controls reject. Empty or disabled selections perform no reads. The
 existing `useProfile(enbox, did, false)` form still disables the lookup.
 No provider is required for an explicit source, including `Enbox.anonymous()`.
+Text-only consumers use a native reader with images disabled, so earlier
+image requests cannot make later text lookups download images. Explicit lazy
+activation can perform another root-profile read; already usable text remains
+visible while that read settles.
 
 ## Read and write records
 

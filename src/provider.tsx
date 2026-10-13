@@ -73,7 +73,20 @@ function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonPro
 function ClientContext({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
   client: ConnectionStore;
 }) {
-  const controller = useMemo(() => new ConnectionController(client, getClientWalletOptions(client)), [client]);
+  const scope = useMemo(() => ({
+    controller: new ConnectionController(client, getClientWalletOptions(client)),
+  }), [client]);
+  const [, resume] = useState(0);
+  const controller = scope.controller;
+  useEffect(() => {
+    // Strict Mode retains the controller. A scope whose Effects were retired
+    // gets a fresh workflow, leaving previously captured actions obsolete.
+    if (scope.controller.isRetired()) {
+      scope.controller = new ConnectionController(client, getClientWalletOptions(client));
+      resume((version) => version + 1);
+    }
+    return scope.controller.retain();
+  }, [client, scope]);
   const value = useMemo(() => ({ client, controller, beforeConnect, beforeDisconnect }),
     [client, controller, beforeConnect, beforeDisconnect]);
   return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;

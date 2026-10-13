@@ -58,13 +58,16 @@ guard. Raw snapshot hooks retain their native contracts.
 ## Profile resources
 
 Profile observers are inert during render. Their first subscription retains a
-shared native lazy reader for the source and watches the selected DIDs. Each
+shared native reader for the source and image policy and watches the selected DIDs. Each
 result exposes resolved display fields and native status/failure metadata.
-Observers select eager, lazy, or off image policy. Eager observers request
-images automatically; lazy observers request them through `loadImages()`.
-Requests coalesce across observers. Text-only observers acquire no image
-leases, even when a sibling loads images. Aggregate status reflects only
-requested fields, while field metadata preserves the shared reader's state.
+Observers select eager, lazy, or off image policy. Native off readers serve
+text-only and unrequested lazy consumers. Native eager readers serve eager
+consumers and explicitly requested lazy DIDs. Separating these pools prevents
+native image demand left by earlier consumers from affecting a later text
+lookup. Requests coalesce within each pool. Lazy activation may read the root
+again; already usable text is retained while it settles. Text-only observers
+acquire no image leases and their image fields stay idle. Aggregate status and
+field metadata describe the reader selected for that DID.
 Image leases
 are reused by Blob identity and released with a grace period for DOM consumers.
 The last observer releases the reader after Strict Mode replay. A retained

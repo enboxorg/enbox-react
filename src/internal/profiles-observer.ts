@@ -21,7 +21,7 @@ export type ProfileResult = ResolvedProfile & Readonly<{
   did: string | undefined;
   /** Status of the fields requested by this consumer. */
   status: ProfileEntryStatus | 'idle';
-  /** Native field metadata, including images requested by another consumer. */
+  /** Native field metadata for this consumer's active reader policy. */
   fields: Readonly<{ profile: ProfileFieldState; avatar: ProfileFieldState; hero: ProfileFieldState }>;
   /** Request both images. Rejects when disabled, released, or images are off. */
   loadImages(): Promise<void>;
@@ -29,11 +29,13 @@ export type ProfileResult = ResolvedProfile & Readonly<{
 type ImageBinding = Readonly<{ blob: Blob; lease: BlobUrlLease }>;
 type ProfileBinding = Readonly<{
   snapshot: ProfileSnapshot | undefined;
+  profileValue: ProfileSnapshot['profile']['value'];
   imagesRequested: boolean;
   result: ProfileResult;
   avatar: ImageBinding | undefined;
   hero: ImageBinding | undefined;
 }>;
+type ReaderPolicy = 'off' | 'eager';
 
 const IDLE_FIELD: ProfileFieldState = Object.freeze({ status: 'idle' });
 const IDLE_FIELDS = Object.freeze({ profile: IDLE_FIELD, avatar: IDLE_FIELD, hero: IDLE_FIELD });
@@ -51,12 +53,12 @@ class ProfileResource {
   private references = 0;
   private generation = 0;
 
-  public constructor(private readonly source: ProfileSource) {}
+  public constructor(private readonly source: ProfileSource, private readonly policy: ReaderPolicy) {}
 
   public retain(): { reader: ProfileReader; release: () => void } {
     // The native reader accepts Enbox's records surface at runtime; its older
     // optional record metadata declarations differ under exact optional types.
-    const reader = this.reader ??= createProfileReader(this.source as ProfileReaderSource, { images: 'lazy' });
+    const reader = this.reader ??= createProfileReader(this.source as ProfileReaderSource, { images: this.policy });
     this.references += 1;
     this.generation += 1;
     let released = false;
@@ -88,10 +90,12 @@ class ProfileResource {
   }
 }
 
-const resources = new WeakMap<ProfileSource, ProfileResource>();
-function resourceFor(source: ProfileSource): ProfileResource {
-  let resource = resources.get(source);
-  if (resource === undefined) { resource = new ProfileResource(source); resources.set(source, resource); }
+const resources = new WeakMap<ProfileSource, Map<ReaderPolicy, ProfileResource>>();
+function resourceFor(source: ProfileSource, policy: ReaderPolicy): ProfileResource {
+  let policies = resources.get(source);
+  if (policies === undefined) { policies = new Map(); resources.set(source, policies); }
+  let resource = policies.get(policy);
+  if (resource === undefined) { resource = new ProfileResource(source, policy); policies.set(policy, resource); }
   return resource;
 }
 
@@ -130,8 +134,11 @@ export class ProfilesObserver {
   private snapshot: ReadonlyMap<string, ProfileResult>;
   private readonly requestedImages = new Set<string>();
   private reader: ProfileReader | undefined;
+  private imageReader: ProfileReader | undefined;
+  private readonly imageWatches = new Map<string, () => void>();
   private stopWatch: (() => void) | undefined;
   private releaseReader: (() => void) | undefined;
+  private releaseImageReader: (() => void) | undefined;
   private active = false;
   private generation = 0;
 
@@ -160,24 +167,21 @@ export class ProfilesObserver {
     if (this.source === undefined || this.dids.length === 0) return;
     this.active = true;
     const generation = ++this.generation;
-    const { reader, release } = resourceFor(this.source).retain();
+    const policy = this.images === 'eager' ? 'eager' : 'off';
+    const { reader, release } = resourceFor(this.source, policy).retain();
     this.reader = reader;
     this.releaseReader = release;
-    if (this.images === 'eager') for (const did of this.dids) this.requestedImages.add(did);
     try {
       // Native watches emit once per DID during subscription. Read the complete
       // selection once after attachment instead of projecting it for each emit.
       let subscribing = true;
       const stopWatch = reader.watch(this.dids, () => {
-        if (!subscribing && this.active && this.generation === generation) this.update(reader);
+        if (!subscribing && this.active && this.generation === generation) this.update();
       });
       subscribing = false;
       if (!this.active || this.generation !== generation) { stopWatch(); return; }
       this.stopWatch = stopWatch;
-      this.update(reader);
-      if (this.images === 'eager') {
-        for (const did of this.dids) void this.loadImages(did, generation).catch(() => {});
-      }
+      this.update();
     } catch (cause) {
       this.stop();
       throw cause;
@@ -188,9 +192,14 @@ export class ProfilesObserver {
     this.active = false;
     this.generation += 1;
     this.reader = undefined;
+    this.imageReader = undefined;
     this.requestedImages.clear();
     try { this.stopWatch?.(); } catch (cause) { reportCleanupError(cause); }
     this.stopWatch = undefined;
+    for (const stop of this.imageWatches.values()) {
+      try { stop(); } catch (cause) { reportCleanupError(cause); }
+    }
+    this.imageWatches.clear();
     for (const binding of this.bindings.values()) {
       releaseChanged(binding.avatar); releaseChanged(binding.hero);
     }
@@ -198,29 +207,74 @@ export class ProfilesObserver {
     this.snapshot = this.idleProfiles;
     this.releaseReader?.();
     this.releaseReader = undefined;
+    this.releaseImageReader?.();
+    this.releaseImageReader = undefined;
   }
 
   private async loadImages(did: string, generation: number): Promise<void> {
-    const reader = this.reader;
-    if (!this.active || this.generation !== generation || reader === undefined || this.source === undefined) {
+    if (!this.active || this.generation !== generation || this.reader === undefined || this.source === undefined) {
       throw new EnboxBindingChangedError();
     }
     if (this.images === 'off') throw new TypeError('Profile images are disabled for this consumer.');
-    const newlyRequested = !this.requestedImages.has(did);
-    this.requestedImages.add(did);
-    if (newlyRequested) this.update(reader);
-    if (!this.active || this.generation !== generation || this.reader !== reader) throw new EnboxBindingChangedError();
-    await resourceFor(this.source).loadImages(reader, did);
-    if (this.active && this.generation === generation && this.reader === reader) this.update(reader);
+    const reader = this.images === 'lazy' ? this.retainImages(did, generation) : this.reader;
+    if (!this.active || this.generation !== generation) throw new EnboxBindingChangedError();
+    await resourceFor(this.source, 'eager').loadImages(reader, did);
+    if (this.active && this.generation === generation) this.update();
   }
 
-  private update(reader: ProfileReader): void {
+  private retainImages(did: string, generation: number): ProfileReader {
+    if (this.imageReader === undefined) {
+      const { reader, release } = resourceFor(this.source!, 'eager').retain();
+      this.imageReader = reader;
+      this.releaseImageReader = release;
+    }
+    const reader = this.imageReader;
+    if (this.requestedImages.has(did)) return reader;
+    this.requestedImages.add(did);
+    try {
+      let subscribing = true;
+      const stop = reader.watch([did], () => {
+        if (!subscribing && this.active && this.generation === generation && this.imageReader === reader) this.update();
+      });
+      subscribing = false;
+      if (!this.active || this.generation !== generation || this.imageReader !== reader) {
+        stop();
+        throw new EnboxBindingChangedError();
+      }
+      this.imageWatches.set(did, stop);
+      this.update();
+    } catch (cause) {
+      if (this.active && this.generation === generation) {
+        this.requestedImages.delete(did);
+        const stop = this.imageWatches.get(did);
+        this.imageWatches.delete(did);
+        try { stop?.(); } catch (cleanup) { reportCleanupError(cleanup); }
+        if (this.imageWatches.size === 0) {
+          this.imageReader = undefined;
+          this.releaseImageReader?.();
+          this.releaseImageReader = undefined;
+        }
+        this.update();
+      }
+      throw cause;
+    }
+    return reader;
+  }
+
+  private update(): void {
     let profiles: Map<string, ProfileResult> | undefined;
     for (const did of this.dids) {
-      const snapshot = reader.getSnapshot(did);
+      const imagesRequested = this.images === 'eager' || this.requestedImages.has(did);
+      const reader = this.images === 'lazy' && imagesRequested ? this.imageReader : this.reader;
+      const snapshot = reader?.getSnapshot(did);
+      // Keep already usable text while an explicitly requested image reader
+      // settles its own root query; field metadata still comes from that reader.
+      const profileValue = snapshot?.profile.value ?? (this.images === 'lazy' && imagesRequested
+        && (snapshot === undefined || snapshot.profile.status === 'loading')
+        ? this.reader?.getSnapshot(did)?.profile.value : undefined);
       const previous = this.bindings.get(did);
-      const imagesRequested = this.requestedImages.has(did);
-      if (previous !== undefined && previous.snapshot === snapshot && previous.imagesRequested === imagesRequested) continue;
+      if (previous !== undefined && previous.snapshot === snapshot && previous.profileValue === profileValue
+        && previous.imagesRequested === imagesRequested) continue;
       const status = projectedStatus(snapshot, imagesRequested);
       const avatar = imageBinding(previous?.avatar, imagesRequested ? snapshot?.avatar.value : undefined);
       const hero = imageBinding(previous?.hero, imagesRequested ? snapshot?.hero.value : undefined);
@@ -233,17 +287,17 @@ export class ProfilesObserver {
         && sameField(previous.result.fields.hero, projectedFields.hero)
         ? previous.result.fields : projectedFields;
       const generation = this.generation;
-      const result = previous !== undefined && previous.snapshot?.profile.value === snapshot?.profile.value
+      const result = previous !== undefined && previous.profileValue === profileValue
         && previous.avatar === avatar && previous.hero === hero
         && previous.result.status === status && previous.result.fields === fields
         ? previous.result
-        : Object.freeze({ ...snapshot?.profile.value,
+        : Object.freeze({ ...profileValue,
           ...(avatar === undefined ? {} : { avatarUrl: avatar.lease.url }),
           ...(hero === undefined ? {} : { heroUrl: hero.lease.url }),
           did, status, fields,
           loadImages: previous?.result.loadImages ?? (() => this.loadImages(did, generation)),
         });
-      this.bindings.set(did, { snapshot, imagesRequested, result, avatar, hero });
+      this.bindings.set(did, { snapshot, profileValue, imagesRequested, result, avatar, hero });
       if (result !== this.snapshot.get(did)) {
         profiles ??= new Map(this.snapshot);
         profiles.set(did, result);

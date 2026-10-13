@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { serializeQuery } from '../src/internal/serialize-query.js';
+import { selectQueryProperties, serializeQuery } from '../src/internal/serialize-query.js';
 
 describe('record query identity', () => {
+  it('selects own data properties without invoking selected or unrelated accessors', () => {
+    const getter = vi.fn(() => 'alice');
+    const input = { from: 'alice', get unused() { return getter(); } };
+    expect(selectQueryProperties(input, ['from'])).toEqual({ from: 'alice' });
+    expect(getter).not.toHaveBeenCalled();
+    expect(() => selectQueryProperties(input, ['unused'])).toThrow('getters');
+    expect(getter).not.toHaveBeenCalled();
+  });
+
   it('normalizes object order and omitted properties while keeping selections distinct', () => {
     const first = serializeQuery({ within: 'parent', filter: { tags: { category: 'work', published: false } } });
     expect(serializeQuery({ filter: { tags: { published: false, category: 'work' } }, unused: undefined, within: 'parent' })).toBe(first);

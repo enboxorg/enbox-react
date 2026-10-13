@@ -13,12 +13,12 @@ import type {
   TypeNameAtPath,
 } from '@enbox/browser';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { RecordViewResult } from './record-view.js';
 import { useRecordViewBinding } from './record-view.js';
 import { useConnectionStore } from './connection.js';
-import { serializeQuery } from '../internal/serialize-query.js';
+import { selectQueryProperties, serializeQuery } from '../internal/serialize-query.js';
 import {
   isConnectionBindingCurrent,
   sameConnectionBinding,
@@ -62,6 +62,8 @@ function assertMaterializationKeys(materialization: unknown): void {
     throw new TypeError('Record materialization supports only the children selection.');
   }
 }
+
+const OPTION_KEYS = ['enabled', 'from', 'within', 'protocolRole', 'filter', 'dateSort', 'pagination', 'materialize'] as const;
 
 export type RecordsOptions<
   Definition extends ProtocolDefinition,
@@ -140,17 +142,14 @@ export function useRecords<
   const expected = useConnectionStore(borrowed ? undefined : client, selectConnectionBinding, sameConnectionBinding);
   const typedEnbox = useMemo(() => borrowed ? undefined
     : expected.enbox?.using<Definition, Codecs, RoleGroups>(protocol), [borrowed, expected.enbox, protocol]);
-  const enabled = options != null && options.enabled !== false;
-  if (options != null) assertMaterializationKeys(options.materialize);
-  const serializedQuery = options == null ? null : serializeQuery({
-    from: options.from,
-    within: options.within,
-    protocolRole: options.protocolRole,
-    filter: options.filter,
-    dateSort: options.dateSort,
-    pagination: options.pagination,
-    materialize: options.materialize,
-  });
+  const selected = options == null ? undefined : selectQueryProperties(options, OPTION_KEYS);
+  const enabled = selected !== undefined && selected.enabled !== false;
+  let serializedQuery: string | null = null;
+  if (selected !== undefined) {
+    assertMaterializationKeys(selected.materialize);
+    const { enabled: _enabled, ...query } = selected;
+    serializedQuery = serializeQuery(query);
+  }
   const bindingGuard = useMemo(() => ({
     isCurrent: () => client !== undefined && isConnectionBindingCurrent(client, expected),
     subscribe: (notify: () => void) => client === undefined ? () => {}
@@ -168,9 +167,10 @@ export function useRecords<
   const { snapshot, observer } = useRecordViewBinding<
     Item | TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
   >(borrowed ? protocol as RecordStore<Item> | null : opener, borrowed ? undefined : bindingGuard);
+  const loadMore = useCallback(() => observer.loadMore(), [observer]);
   const result = useMemo(
-    () => Object.freeze({ ...snapshot, loadMore: observer.loadMore }),
-    [snapshot, observer],
+    () => Object.freeze({ ...snapshot, loadMore }),
+    [snapshot, loadMore],
   );
   if (!borrowed && client === undefined) throw new Error('Enbox hooks require an EnboxProvider.');
   return result;

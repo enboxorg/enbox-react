@@ -4,11 +4,41 @@ import { Activity } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { EnboxProvider, useContextView, useEnboxClient, useRecordView } from '../src/index.js';
+import { EnboxBindingChangedError, EnboxProvider, useContextView, useEnboxClient, useEnboxConnection, useRecordView } from '../src/index.js';
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
-import { ControlledView } from './helpers.js';
+import { connected, controlledClient, ControlledView, deferred } from './helpers.js';
 
 describe('React Activity', () => {
+  it('resumes a borrowed client with a fresh workflow while retired guards stay obsolete', async () => {
+    const { client } = controlledClient(connected());
+    const saving = deferred<void>();
+    const beforeConnect = vi.fn().mockReturnValueOnce(saving.promise).mockResolvedValue(undefined);
+    let connection!: ReturnType<typeof useEnboxConnection>;
+    function Content() { connection = useEnboxConnection(); return <output>{connection.isConnecting ? 'waiting' : 'ready'}</output>; }
+    const element = (mode: 'visible' | 'hidden') => <Activity mode={mode}>
+      <EnboxProvider client={client} beforeConnect={beforeConnect}><Content /></EnboxProvider>
+    </Activity>;
+    const tree = render(element('visible'));
+    const retired = connection;
+    let pending!: Promise<void>;
+    act(() => { pending = retired.connect(); });
+    const rejected = expect(pending).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { tree.rerender(element('hidden')); await Promise.resolve(); });
+    await rejected;
+    await expect(retired.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    tree.rerender(element('visible'));
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    expect(connection.connect).not.toBe(retired.connect);
+    await act(async () => { await connection.connect(); });
+    expect(client.connect).toHaveBeenCalledOnce();
+    await act(async () => { saving.resolve(); await Promise.resolve(); });
+    expect(client.connect).toHaveBeenCalledOnce();
+    await expect(retired.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    expect(client.dispose).not.toHaveBeenCalled();
+    tree.unmount();
+  });
+
   it('reopens a context catalog when retained effects resume', async () => {
     const closes: ReturnType<typeof vi.fn<() => Promise<void>>>[] = [];
     const open = async () => {
