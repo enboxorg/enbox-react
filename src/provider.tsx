@@ -2,7 +2,7 @@
 
 import type { ConnectionStore } from '@enbox/browser';
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import { createEnboxClient, getClientWalletOptions, type CreateEnboxClientOptions } from './config/client.js';
 import { ConnectionController, type ConnectionPolicy } from './internal/connection-controller.js';
@@ -43,19 +43,17 @@ function BorrowedProvider({ client, initializeOnMount = true, ...props }: Common
 function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonProps & { config: CreateEnboxClientOptions }) {
   // Configuration belongs to this mounted application scope. Retained React
   // state can outlive its Effects, so a retired native client must be replaced.
-  const [scope] = useState(() => ({
+  const [scope, setScope] = useState(() => ({
     config, client: createEnboxClient(config), generation: 0, retired: false,
   }));
-  const [client, setClient] = useState(scope.client);
-  const lifetime = useRef(scope);
+  if (scope.retired) {
+    // Updating this component's state during render makes React retry it before
+    // rendering children. Creating an inert client is safe in an abandoned render.
+    setScope({ config: scope.config, client: createEnboxClient(scope.config), generation: 0, retired: false });
+  }
   useEffect(() => {
-    const current = lifetime.current;
+    const current = scope;
     const generation = ++current.generation;
-    if (current.retired) {
-      current.client = createEnboxClient(current.config);
-      current.retired = false;
-      setClient(current.client);
-    }
     if (initializeOnMount) initialize(current.client);
     return () => {
       queueMicrotask(() => {
@@ -64,29 +62,35 @@ function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonPro
         void current.client.dispose().catch((cause: unknown) => {
           console.warn('[@enbox/react] Client disposal failed.', cause);
         });
+        // Activity may reactivate Effects without rendering unchanged children.
+        // Schedule the replacement while hidden so resume Effects receive it.
+        setScope((latest) => latest === current ? { ...current } : latest);
       });
     };
-  }, [initializeOnMount]);
-  return <ClientContext {...props} client={client} />;
+  }, [scope, initializeOnMount]);
+  return <ClientContext {...props} client={scope.client} />;
 }
 
 function ClientContext({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
   client: ConnectionStore;
 }) {
-  const scope = useMemo(() => ({
+  const [scope, setScope] = useState(() => ({
+    client,
     controller: new ConnectionController(client, getClientWalletOptions(client)),
-  }), [client]);
-  const [, resume] = useState(0);
+  }));
+  if (scope.client !== client || scope.controller.isRetired()) {
+    setScope({ client, controller: new ConnectionController(client, getClientWalletOptions(client)) });
+  }
   const controller = scope.controller;
   useEffect(() => {
-    // Strict Mode retains the controller. A scope whose Effects were retired
-    // gets a fresh workflow, leaving previously captured actions obsolete.
-    if (scope.controller.isRetired()) {
-      scope.controller = new ConnectionController(client, getClientWalletOptions(client));
-      resume((version) => version + 1);
-    }
-    return scope.controller.retain();
-  }, [client, scope]);
+    const release = controller.retain();
+    return () => {
+      release();
+      queueMicrotask(() => {
+        if (controller.isRetired()) setScope((latest) => latest === scope ? { ...scope } : latest);
+      });
+    };
+  }, [controller, scope]);
   const value = useMemo(() => ({ client, controller, beforeConnect, beforeDisconnect }),
     [client, controller, beforeConnect, beforeDisconnect]);
   return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;

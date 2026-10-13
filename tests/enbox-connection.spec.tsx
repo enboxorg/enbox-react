@@ -154,6 +154,37 @@ describe('dapp connection workflow', () => {
     expect(client.connect).not.toHaveBeenCalled();
   });
 
+  it('preserves an issued approval outcome when a disconnect guard fails', async () => {
+    const { client } = controlledClient();
+    const issued = deferred<ReturnType<typeof client.getSnapshot>>();
+    const saving = deferred<void>();
+    client.connect.mockReturnValueOnce(issued.promise);
+    const hook = renderHook(useEnboxConnection, {
+      wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
+    });
+    let connecting!: Promise<void>;
+    let settled = false;
+    act(() => {
+      connecting = hook.result.current.connect();
+      void connecting.then(() => { settled = true; }, () => { settled = true; });
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(client.connect).toHaveBeenCalledOnce();
+    let disconnecting!: Promise<void>;
+    act(() => { disconnecting = hook.result.current.disconnect(); });
+    const saveFailure = new Error('save failed');
+    const disconnected = expect(disconnecting).rejects.toBe(saveFailure);
+    await act(async () => { await Promise.resolve(); saving.reject(saveFailure); await disconnected; });
+    expect(settled).toBe(false);
+    expect(hook.result.current.isConnecting).toBe(true);
+    expect(client.disconnect).not.toHaveBeenCalled();
+    const approvalFailure = new Error('approval failed');
+    const connected = expect(connecting).rejects.toBe(approvalFailure);
+    await act(async () => { issued.reject(approvalFailure); await connected; });
+    expect(settled).toBe(true);
+    expect(hook.result.current.isConnecting).toBe(false);
+  });
+
   it('does not publish repair progress or run a guard after initialization outlives a cancelled connect', async () => {
     const { client, publish } = controlledClient({ phase: 'initializing' });
     const initialization = deferred<ReturnType<typeof client.getSnapshot>>();

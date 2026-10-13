@@ -221,6 +221,41 @@ describe('owned context views', () => {
     expect(views.every((view) => view.close.mock.calls.length === 1)).toBe(true);
   });
 
+  it('keeps replacement readiness pending when an opening failure retries during cleanup', async () => {
+    const failedOpening = deferred<ContextView<string>>();
+    const replacementOpening = deferred<ContextView<string>>();
+    let recovered!: Promise<void>;
+    let ready!: Promise<Extract<ReturnType<ContextViewObserver<string>['getSnapshot']>, { status: 'ready' }>>;
+    let readySettled = false;
+    let store!: ReturnType<typeof createContextStore<string>>;
+    const open = vi.fn<ContextViewOpener<string>>().mockImplementationOnce((signal) => {
+      signal.addEventListener('abort', () => {
+        recovered = store.retry();
+        ready = store.ready();
+        void ready.then(() => { readySettled = true; }, () => { readySettled = true; });
+      }, { once: true });
+      return failedOpening.promise;
+    }).mockImplementation(() => replacementOpening.promise);
+    store = createContextStore(open);
+    const stop = subscribeObserver(store);
+    const opening = store.retry();
+    await Promise.resolve();
+    const failure = new Error('catalog opening failed');
+    const rejected = expect(opening).rejects.toBe(failure);
+    failedOpening.reject(failure);
+    await rejected;
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(store.getSnapshot().status).toBe('loading');
+    expect(readySettled).toBe(false);
+    const replacement = new ControlledContextView(['recovered']);
+    replacementOpening.resolve(replacement);
+    await recovered;
+    await expect(ready).resolves.toMatchObject({ contexts: ['recovered'] });
+    stop();
+    await store.close();
+    expect(replacement.close).toHaveBeenCalledOnce();
+  });
+
   it('releases a subscription returned after its binding was invalidated during attachment', async () => {
     let current = true;
     let notifyBinding = (): void => {};

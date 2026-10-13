@@ -1,6 +1,6 @@
 import type { ContextView } from '@enbox/browser';
 
-import { Activity } from 'react';
+import { Activity, useEffect } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,70 @@ import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/
 import { connected, controlledClient, ControlledView, deferred } from './helpers.js';
 
 describe('React Activity', () => {
+  it('gives resumed child Effects a fresh borrowed workflow even when children are unchanged', async () => {
+    const { client } = controlledClient();
+    const errors: unknown[] = [];
+    let effects = 0;
+    function Content() {
+      const connection = useEnboxConnection();
+      useEffect(() => {
+        effects += 1;
+        void connection.connect().catch((cause: unknown) => { errors.push(cause); });
+      }, []);
+      return null;
+    }
+    const children = <EnboxProvider client={client} initializeOnMount={false}><Content /></EnboxProvider>;
+    const tree = render(<Activity mode="visible">{children}</Activity>);
+    await waitFor(() => expect(client.connect).toHaveBeenCalledOnce());
+    await act(async () => {
+      tree.rerender(<Activity mode="hidden">{children}</Activity>);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.rerender(<Activity mode="visible">{children}</Activity>);
+      await Promise.resolve();
+    });
+    expect(effects).toBe(2);
+    expect(errors).toEqual([]);
+    expect(client.connect).toHaveBeenCalledTimes(2);
+    tree.unmount();
+  });
+
+  it('gives resumed child Effects a usable owned client before their native actions run', async () => {
+    const config = { application: defineApplicationManifest({ protocols: [defineProtocol({
+      protocol: 'https://activity.test/native-effects', published: false,
+      types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
+    } as const, { note: recordCodecs.json() })] }) };
+    const clients: ReturnType<typeof useEnboxClient>[] = [];
+    const errors: unknown[] = [];
+    function Content() {
+      const client = useEnboxClient();
+      useEffect(() => {
+        clients.push(client);
+        // A native disconnect on an inert client needs no AuthManager. Like
+        // initialize(), it throws synchronously if the old client was disposed.
+        try { void client.disconnect().catch((cause: unknown) => { errors.push(cause); }); }
+        catch (cause: unknown) { errors.push(cause); }
+      }, []);
+      return null;
+    }
+    const children = <EnboxProvider config={config} initializeOnMount={false}><Content /></EnboxProvider>;
+    const tree = render(<Activity mode="visible">{children}</Activity>);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      tree.rerender(<Activity mode="hidden">{children}</Activity>);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.rerender(<Activity mode="visible">{children}</Activity>);
+      await Promise.resolve();
+    });
+    expect(errors).toEqual([]);
+    expect(clients).toHaveLength(2);
+    expect(clients[1]).not.toBe(clients[0]);
+    tree.unmount();
+  });
+
   it('resumes a borrowed client with a fresh workflow while retired guards stay obsolete', async () => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();

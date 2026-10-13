@@ -159,9 +159,9 @@ export class ConnectionController {
     let nativeIssued = false;
     const cancelled = new Promise<void>((resolve, reject) => {
       this.cancelConnect = (reason) => {
-        // A retiring provider fences a guard but leaves an issued wallet
-        // operation's Promise and SDK lifetime intact.
-        if (reason !== undefined && nativeIssued) return;
+        // Disconnect and provider retirement can fence a waiting guard, but
+        // already-issued native work keeps its original Promise outcome.
+        if (nativeIssued) return;
         if (reason === undefined) resolve();
         else reject(reason);
       };

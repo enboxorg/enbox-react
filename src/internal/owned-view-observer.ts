@@ -48,6 +48,7 @@ export class OwnedViewObserver<
   protected _attempt: ViewAttempt<View> | undefined;
   private _active = false;
   private _closed = false;
+  private _generation = 0;
   private _unsubscribeBinding: (() => void) | undefined;
   private readonly _closing = new Set<Promise<void>>();
 
@@ -173,6 +174,7 @@ export class OwnedViewObserver<
     };
     // Register the replacement before cleanup can request another retry.
     this._attempt = attempt;
+    this._generation += 1;
     this.releaseAttempt(previous);
     if (this.isCurrent(attempt)) this.publish(this._presentation.loading);
     return attempt.opening;
@@ -200,17 +202,23 @@ export class OwnedViewObserver<
       if (this.isCurrent(attempt)) this.publish(state);
     } catch (cause: unknown) {
       if (this.isCurrent(attempt)) {
-        this.closeAttempt();
-        this.publish(this._presentation.error(toError(cause)));
+        const generation = this.closeAttempt();
+        // Cleanup can synchronously begin another attempt or retire this owner.
+        // Its readiness waiters must not receive the obsolete opening failure.
+        if (this._active && this._generation === generation && this.isBindingCurrent()) {
+          this.publish(this._presentation.error(toError(cause)));
+        }
       }
       throw cause;
     }
   }
 
-  private closeAttempt(): void {
+  private closeAttempt(): number {
+    const generation = ++this._generation;
     const attempt = this._attempt;
     this._attempt = undefined;
     this.releaseAttempt(attempt);
+    return generation;
   }
 
   private releaseAttempt(attempt: ViewAttempt<View> | undefined): void {
