@@ -47,10 +47,10 @@ export const NotesProtocol = defineProtocol({
   structure: { note: {} },
 } as const, { note: recordCodecs.json<Note>() });
 
-export const client = createEnboxClient({
+export const config = {
   application: defineApplicationManifest({ protocols: [NotesProtocol] }),
   wallet: { appName: 'My notes', appIcon: '/icon.svg' },
-});
+} satisfies Parameters<typeof createEnboxClient>[0];
 ```
 
 Protocol identifiers should be stable URLs owned by your application.
@@ -71,16 +71,21 @@ normal renewal can be initiated with the existing `connect()` action.
 
 ```tsx
 import { EnboxProvider } from '@enbox/react';
-import { client } from './application.js';
+import { config } from './application.js';
 
 export function App() {
-  return <EnboxProvider client={client}><Notes /></EnboxProvider>;
+  return <EnboxProvider config={config}><Notes /></EnboxProvider>;
 }
 ```
 
-The provider initializes the store after mount and borrows its lifetime.
-Unmounting cleans up hook resources. The application host calls
-`client.dispose()` when retiring the client; `disconnect()` signs out.
+With `config`, the provider creates, initializes, and disposes the client.
+Configuration is fixed for the mounted scope; use a new provider key to
+change it. Strict Mode replay keeps the live client. Effect reactivation
+after Activity retirement creates a fresh client and restores its session.
+
+Use `client={createEnboxClient(config)}` when the application already owns
+one stable client. That form borrows its lifetime; the host calls
+`client.dispose()` when retiring it. `disconnect()` signs out.
 `initializeOnMount={false}` lets a host finish worker bootstrap before calling
 `client.initialize()` itself.
 
@@ -89,6 +94,41 @@ the store within the client application boundary, use fresh inert instances
 on the server, and retain a browser instance for the application lifetime.
 Pass client components through your framework's client boundary; store
 instances and codec-bearing manifests are not serializable RSC props.
+
+## Connect a wallet
+
+```tsx
+import { useEnboxConnection } from '@enbox/react';
+
+function WalletButton() {
+  const connection = useEnboxConnection();
+  return <button disabled={connection.isConnecting || connection.isDisconnecting}
+    onClick={() => { void connection.connect().catch(reportError); }}>
+    {connection.isConnected ? connection.identityName ?? connection.did : 'Connect wallet'}
+  </button>;
+}
+```
+
+This hook provides usable connection state, wallet repair, shared progress,
+and actions that reject actionable failures while treating denial quietly.
+Native `useConnection` and `useConnectionActions` remain available for raw
+snapshot outcomes. A per-call `connect({ wallet: options })` retains the
+provider's app identity while changing the wallet route.
+
+Pass `beforeConnect` or `beforeDisconnect` to the provider for application
+guards, such as saving edits. Disconnect progress includes the guard. Failed
+guards preserve the connected session. An explicit
+`disconnect({ skipBeforeDisconnect: true })` bypasses that guard; the host
+owns the decision and its UI. Binding changes during an awaited guard prevent
+the action from targeting a replacement identity.
+
+## Resolve profiles
+
+`useProfile(enbox, did)` and `useProfiles(enbox, dids)` read published profile
+text and provide `avatarUrl` and `heroUrl`. They share one native reader per
+source, manage image URL leases, and release watches on unmount. Empty or
+disabled selections perform no reads. No provider is required for an explicit
+source, including `Enbox.anonymous()`.
 
 ## Read and write records
 

@@ -1,7 +1,7 @@
 import type { TypedMaterializedRecord, TypedRecord } from '@enbox/browser';
 import type { RecordsOptions, RecordsResult } from '@enbox/react';
 
-import { EnboxProvider, useEnboxMutation, useProtocol, useRecords } from '@enbox/react';
+import { EnboxProvider, useEnboxConnection, useEnboxMutation, useProfile, useProtocol, useRecords } from '@enbox/react';
 import { createEnboxClient, createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
 
 type Note = { title: string };
@@ -24,6 +24,12 @@ const shared = createRecordStore(async (signal) => client.getSnapshot().enbox!
 
 export function Contract(): React.ReactNode {
   const bound = useProtocol(protocol);
+  const connection = useEnboxConnection();
+  const profileName: string | undefined = useProfile(connection.enbox, connection.did).displayName;
+  void profileName;
+  void connection.disconnect({ skipBeforeDisconnect: true });
+  // @ts-expect-error per-call wallet and handler configuration are mutually exclusive
+  void connection.connect({ wallet: {}, connectHandler: { requestAccess: async () => undefined } });
   const sharedRows = useRecords(shared);
   const sharedTitle: string | undefined = sharedRows.records[0]?.value.title;
   void sharedTitle;
@@ -70,6 +76,14 @@ export function Contract(): React.ReactNode {
   useRecords(protocol, 'folder', { pagination: { limit: 1 }, signal: new AbortController().signal });
   return <EnboxProvider client={client}>{title}</EnboxProvider>;
 }
+
+export function OwnedContract(): React.ReactNode {
+  return <EnboxProvider config={{ application, wallet: { appName: 'Notes' } }}><Contract /></EnboxProvider>;
+}
+
+// @ts-expect-error client ownership cannot be configured in two ways
+const invalidProvider = <EnboxProvider client={client} config={{ application }} />;
+void invalidProvider;
 
 // @ts-expect-error manifest configuration cannot be overridden
 createEnboxClient({ application, connection: { application } });
