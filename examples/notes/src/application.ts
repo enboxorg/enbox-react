@@ -1,4 +1,4 @@
-import type { RecordValidator } from '@enbox/react/config';
+import type { CreateEnboxClientOptions, RecordValidator } from '@enbox/react/config';
 
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
 
@@ -20,3 +20,8 @@ export const NotesProtocol = defineProtocol({
 } as const, { note: recordCodecs.json<Note>({ validator: validateNote }) });
 
 export const application = defineApplicationManifest({ protocols: [NotesProtocol] });
+
+export const config = {
+  application,
+  wallet: { appName: 'Enbox React Notes' },
+} satisfies CreateEnboxClientOptions;
