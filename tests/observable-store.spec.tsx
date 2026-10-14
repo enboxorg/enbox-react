@@ -1,6 +1,7 @@
 import type { ObservableStore } from '@enbox/browser';
 
 import { act, renderHook } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useObservableStore } from '../src/index.js';
@@ -86,5 +87,105 @@ describe('borrowed observable stores', () => {
     const hook = renderHook(() => useObservableStore(store, 0));
     expect(hook.result.current).toBe(2);
     expect(store.onSubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('uses Object.is by default to skip unchanged selected slices', () => {
+    const store = new TestStore({ count: 1, status: 'ready' });
+    let renders = 0;
+    const hook = renderHook(() => {
+      renders += 1;
+      return useObservableStore(store, 0, (snapshot) => snapshot.count);
+    });
+    const initialRenders = renders;
+    act(() => store.publish({ count: 1, status: 'refreshing' }));
+    expect(renders).toBe(initialRenders);
+    act(() => store.publish({ count: 2, status: 'ready' }));
+    expect(hook.result.current).toBe(2);
+    expect(renders).toBeGreaterThan(initialRenders);
+    hook.unmount();
+    expect(store.listeners.size).toBe(0);
+    expect(store.close).not.toHaveBeenCalled();
+  });
+
+  it('preserves equal object selections and applies selector and source changes immediately', () => {
+    const first = new TestStore(2);
+    const second = new TestStore(3);
+    const fallback = Object.freeze({ value: 0 });
+    const hook = renderHook(({ store, multiplier }) => useObservableStore(
+      store, fallback, (snapshot) => ({ value: snapshot * multiplier }),
+      (previous, next) => previous.value === next.value,
+    ), { initialProps: { store: first, multiplier: 1 } });
+    const original = hook.result.current;
+    hook.rerender({ store: first, multiplier: 1 });
+    expect(hook.result.current).toBe(original);
+    hook.rerender({ store: first, multiplier: 2 });
+    expect(hook.result.current).toEqual({ value: 4 });
+    hook.rerender({ store: second, multiplier: 2 });
+    expect(hook.result.current).toEqual({ value: 6 });
+    expect(first.listeners.size).toBe(0);
+    expect(second.listeners.size).toBe(1);
+    act(() => second.publish(4));
+    expect(hook.result.current).toEqual({ value: 8 });
+  });
+
+  it('uses selected fallbacks without passing absent sources to the selector', () => {
+    const select = vi.fn((snapshot: number) => `count:${snapshot}`);
+    const hook = renderHook(({ store, fallback }) => useObservableStore(store, fallback, select), {
+      initialProps: { store: null as TestStore<number> | null | undefined, fallback: 'none' },
+    });
+    expect(hook.result.current).toBe('none');
+    hook.rerender({ store: undefined, fallback: 'updated fallback' });
+    expect(hook.result.current).toBe('updated fallback');
+    expect(select).not.toHaveBeenCalled();
+    hook.rerender({ store: new TestStore(2), fallback: 'none' });
+    expect(hook.result.current).toBe('count:2');
+  });
+
+  it('reselects mutable sources that have the same revision when their identities change', () => {
+    class MutableSource extends TestStore<number> {
+      public constructor(public readonly label: string) { super(0); }
+    }
+    const first = new MutableSource('first');
+    const second = new MutableSource('second');
+    const hook = renderHook(({ store }) => useObservableStore(store, 'none', () => store.label), {
+      initialProps: { store: first },
+    });
+    expect(hook.result.current).toBe('first');
+    hook.rerender({ store: second });
+    expect(hook.result.current).toBe('second');
+    expect(first.listeners.size).toBe(0);
+    expect(second.listeners.size).toBe(1);
+  });
+
+  it('selects a legitimate undefined snapshot without substituting the fallback', () => {
+    const store = new TestStore<number | undefined>(undefined);
+    const hook = renderHook(() => [
+      useObservableStore(store, 0),
+      useObservableStore(store, 'fallback', (snapshot) => snapshot === undefined ? 'undefined' : String(snapshot)),
+    ]);
+    expect(hook.result.current).toEqual([undefined, 'undefined']);
+  });
+
+  it('renders server fallbacks without reading the store or invoking its selector', () => {
+    const store = new TestStore(42);
+    const read = vi.spyOn(store, 'getSnapshot');
+    const subscribe = vi.spyOn(store, 'subscribe');
+    const select = vi.fn((snapshot: number) => `count:${snapshot}`);
+    function Content() {
+      const native = useObservableStore(store, 0);
+      const selected = useObservableStore(store, 'server fallback', select);
+      return <output>{native}|{selected}</output>;
+    }
+    expect(renderToString(<Content />)).toContain('0<!-- -->|<!-- -->server fallback');
+    expect(read).not.toHaveBeenCalled();
+    expect(subscribe).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('observes selected updates made while the subscription attaches', () => {
+    const store = new TestStore(1);
+    store.onSubscribe = () => store.publish(2);
+    const hook = renderHook(() => useObservableStore(store, 'none', (snapshot) => `count:${snapshot}`));
+    expect(hook.result.current).toBe('count:2');
   });
 });

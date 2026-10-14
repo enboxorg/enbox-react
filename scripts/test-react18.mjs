@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -13,6 +13,17 @@ const generated = join(fixture, 'generated');
 const archive = join(root, '.artifacts/enbox-react.tgz');
 
 mkdirSync(join(root, '.artifacts'), { recursive: true });
+// Match clean CI checkouts regardless of the developer's local file umask.
+// The dependent app's lockfile can then pin the exact tested release archive.
+function normalizePackageFiles(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) normalizePackageFiles(path);
+    else if (entry.isFile()) chmodSync(path, 0o644);
+  }
+}
+for (const directory of ['src', 'dist']) normalizePackageFiles(join(root, directory));
+for (const file of ['package.json', 'README.md', 'LICENSE']) chmodSync(join(root, file), 0o644);
 execFileSync('bun', ['pm', 'pack', '--ignore-scripts', '--filename', archive, '--quiet'], {
   cwd: root, stdio: 'inherit',
 });

@@ -18,7 +18,10 @@ export {
 export type { ConnectionActions, ConnectionSelector, EqualityFn } from './hooks/connection.js';
 export { useObservableStore } from './hooks/observable-store.js';
 export type { ObservableStoreSource } from './hooks/observable-store.js';
-export type { RecordStore, RecordStoreOptions } from './config/record-store.js';
+export type {
+  RecordStore, RecordStoreOptions, SelectedRecordStore,
+  SelectedRecordStoreConfig, SelectedRecordSnapshot,
+} from './config/record-store.js';
 export { useProfile, useProfiles } from './hooks/profiles.js';
 export type { ProfileSource, ResolvedProfile, ProfileResult, ProfileOptions, ProfileFieldState } from './hooks/profiles.js';
 export { useRecordView } from './hooks/record-view.js';
@@ -29,5 +32,5 @@ export type { ContextStore, ContextStoreOptions } from './config/context-store.j
 export { useRecords } from './hooks/records.js';
 export type { RecordsOptions, RecordsResult } from './hooks/records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
-export type { EnboxMutation, EnboxMutationResult } from './hooks/mutation.js';
+export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';
 export { EnboxBindingChangedError, EnboxNotConnectedError } from './errors.js';

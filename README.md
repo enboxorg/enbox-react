@@ -239,6 +239,31 @@ aborts. Release controller subscriptions with `stop()` when retiring them.
 The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
 opener overload `useRecordView(opener)` own a view for each hook instead.
 
+For a controller that changes its record selection, the same factory can own
+the replacement views and expose the selection in each snapshot:
+
+```ts
+const notesByLimit = createRecordStore({
+  selection: null as number | null,
+  open: (limit, signal) => enbox.using(NotesProtocol).records.observe('note', {
+    materialize: true, pagination: { limit }, signal,
+  }),
+  signal: workspaceLifetime.signal,
+});
+
+await notesByLimit.select(20);
+const { selection: limit, records } = notesByLimit.getSnapshot();
+```
+
+`select()` resolves after attaching the native view; `ready()` waits for usable
+rows. Selecting `null` releases it and publishes idle with no records. React
+and controller subscribers keep one stable store and share its current view.
+`updateRecords()` can publish an acknowledged local write before its native
+query event arrives; the next native publication replaces that transient data.
+Set `loadAll: true` on either factory form to expand every page for each opened
+view. Expansion uses the same pagination controls and publishes failures in the
+store snapshot; its lifetime follows the selected view.
+
 ## Observe memberships and invitations
 
 Native membership and invitation observers also return `RecordView` instances.
@@ -291,8 +316,24 @@ counts current work, the latest invocation owns the displayed error, and
 finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
 Use the captured mutation's `isCurrent()` before UI effects after `await` to
-check that its connection binding is still active. Selection and draft guards
-remain application decisions.
+check that its connection binding is still active. Pass `{ scope: pageId }`
+when the mutation also belongs to a page or dialog. Changing that scope resets
+pending/error presentation and retires captured controls while issued writes
+retain their original Promise outcomes.
+
+`pendingVariables` lists each current invocation's input in start order,
+including concurrent calls with identical inputs. Derive per-row busy state
+from those inputs rather than maintaining another pending set:
+
+```tsx
+const update = useEnboxMutation(
+  async (enbox, input: { recordId: string; title: string }) =>
+    enbox.using(NotesProtocol).records.patch('note', input.recordId, { title: input.title }),
+  { scope: activeList },
+);
+const isBusy = (recordId: string) =>
+  update.pendingVariables.some((input) => input.recordId === recordId);
+```
 
 The mutation runner captures the operation passed by that render. Its identity
 is stable while that operation and session binding are stable; use
@@ -310,13 +351,18 @@ also keeps an abandoned render from replacing a committed callback.
 | `useIdentity()` | Current session identity metadata. |
 | `useSyncStatus()` | Native sync snapshot. |
 | `useProtocol(protocol)` | Typed facade binding, recreated when the facade changes. |
-| `useObservableStore(store, fallback)` | Borrowed observable with a stable immutable server/empty fallback. |
+| `useObservableStore(store, fallback, selector?, isEqual?)` | Borrow an observable; select and compare a slice without a caller-maintained result cache. |
 | `useRecordView(opener)` | Owns a view opened by a memoized callback receiving an abort signal; `null` releases it. |
 | `useContextView(opener)` | Owns a native context catalog, or borrows a shared context store; `null` releases the selection. |
 
 The [architecture](https://github.com/enboxorg/enbox-react/blob/main/docs/architecture.md)
 describes connection bindings, resource ownership, query identity, and async
 operation contracts.
+
+With a selector, `fallback` is the selected value returned for an absent store
+and during server rendering. The selector runs only on actual store snapshots;
+`isEqual` defaults to `Object.is`. Mutable sources must publish a changing,
+cached snapshot (such as a revision number) when their contents change.
 
 ## Validation
 
