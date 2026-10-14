@@ -1,18 +1,40 @@
 'use client';
 
 import { useMemo, useSyncExternalStore } from 'react';
-import { ProfilesObserver, type ProfileSource, type ResolvedProfile } from '../internal/profiles-observer.js';
+import {
+  idleProfileResult, ProfilesObserver, type ProfileOptions, type ProfileSource, type ProfileResult,
+} from '../internal/profiles-observer.js';
 
-export type { ProfileSource, ResolvedProfile } from '../internal/profiles-observer.js';
+export type { ProfileFieldState, ProfileOptions, ProfileSource, ProfileResult, ResolvedProfile } from '../internal/profiles-observer.js';
 
-/** Resolve public profiles with shared native reads and managed image URLs. */
-export function useProfiles(source: ProfileSource | null | undefined, dids: readonly string[]): ReadonlyMap<string, ResolvedProfile> {
+function useProfilesObserver(
+  source: ProfileSource | null | undefined,
+  dids: readonly string[],
+  options: ProfileOptions,
+): ProfilesObserver {
   const key = JSON.stringify([...new Set(dids)].sort());
-  const observer = useMemo(() => new ProfilesObserver(source ?? undefined, JSON.parse(key) as string[]), [source, key]);
+  const enabled = options.enabled !== false;
+  const images = options.images ?? 'eager';
+  return useMemo(() => new ProfilesObserver(enabled ? source ?? undefined : undefined, JSON.parse(key) as string[], images),
+    [source, key, enabled, images]);
+}
+
+/** Resolve profiles, native settlement state, and leased image URLs. */
+export function useProfiles(
+  source: ProfileSource | null | undefined,
+  dids: readonly string[],
+  options: ProfileOptions = {},
+): ReadonlyMap<string, ProfileResult> {
+  const observer = useProfilesObserver(source, dids, options);
   return useSyncExternalStore(observer.subscribe, observer.getSnapshot, observer.getServerSnapshot);
 }
 
-const EMPTY_PROFILE: ResolvedProfile = Object.freeze({});
-export function useProfile(source: ProfileSource | null | undefined, did: string | undefined, enabled = true): ResolvedProfile {
-  return useProfiles(source, enabled && did ? [did] : []).get(did ?? '') ?? EMPTY_PROFILE;
+const EMPTY_PROFILE = idleProfileResult();
+export function useProfile(
+  source: ProfileSource | null | undefined,
+  did: string | undefined,
+  enabledOrOptions: boolean | ProfileOptions = true,
+): ProfileResult {
+  const options = typeof enabledOrOptions === 'boolean' ? { enabled: enabledOrOptions } : enabledOrOptions;
+  return useProfiles(source, did ? [did] : [], options).get(did ?? '') ?? EMPTY_PROFILE;
 }

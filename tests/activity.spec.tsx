@@ -1,12 +1,133 @@
-import { Activity } from 'react';
-import { act, render, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import type { ContextView } from '@enbox/browser';
 
-import { EnboxProvider, useEnboxClient, useRecordView } from '../src/index.js';
+import { Activity, useEffect } from 'react';
+import { act, render, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { EnboxBindingChangedError, EnboxProvider, useContextView, useEnboxClient, useEnboxConnection, useRecordView } from '../src/index.js';
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
-import { ControlledView } from './helpers.js';
+import { connected, controlledClient, ControlledView, deferred } from './helpers.js';
 
 describe('React Activity', () => {
+  it('gives resumed child Effects a fresh borrowed workflow even when children are unchanged', async () => {
+    const { client } = controlledClient();
+    const errors: unknown[] = [];
+    let effects = 0;
+    function Content() {
+      const connection = useEnboxConnection();
+      useEffect(() => {
+        effects += 1;
+        void connection.connect().catch((cause: unknown) => { errors.push(cause); });
+      }, []);
+      return null;
+    }
+    const children = <EnboxProvider client={client} initializeOnMount={false}><Content /></EnboxProvider>;
+    const tree = render(<Activity mode="visible">{children}</Activity>);
+    await waitFor(() => expect(client.connect).toHaveBeenCalledOnce());
+    await act(async () => {
+      tree.rerender(<Activity mode="hidden">{children}</Activity>);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.rerender(<Activity mode="visible">{children}</Activity>);
+      await Promise.resolve();
+    });
+    expect(effects).toBe(2);
+    expect(errors).toEqual([]);
+    expect(client.connect).toHaveBeenCalledTimes(2);
+    tree.unmount();
+  });
+
+  it('gives resumed child Effects a usable owned client before their native actions run', async () => {
+    const config = { application: defineApplicationManifest({ protocols: [defineProtocol({
+      protocol: 'https://activity.test/native-effects', published: false,
+      types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
+    } as const, { note: recordCodecs.json() })] }) };
+    const clients: ReturnType<typeof useEnboxClient>[] = [];
+    const errors: unknown[] = [];
+    function Content() {
+      const client = useEnboxClient();
+      useEffect(() => {
+        clients.push(client);
+        // A native disconnect on an inert client needs no AuthManager. Like
+        // initialize(), it throws synchronously if the old client was disposed.
+        try { void client.disconnect().catch((cause: unknown) => { errors.push(cause); }); }
+        catch (cause: unknown) { errors.push(cause); }
+      }, []);
+      return null;
+    }
+    const children = <EnboxProvider config={config} initializeOnMount={false}><Content /></EnboxProvider>;
+    const tree = render(<Activity mode="visible">{children}</Activity>);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      tree.rerender(<Activity mode="hidden">{children}</Activity>);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tree.rerender(<Activity mode="visible">{children}</Activity>);
+      await Promise.resolve();
+    });
+    expect(errors).toEqual([]);
+    expect(clients).toHaveLength(2);
+    expect(clients[1]).not.toBe(clients[0]);
+    tree.unmount();
+  });
+
+  it('resumes a borrowed client with a fresh workflow while retired guards stay obsolete', async () => {
+    const { client } = controlledClient(connected());
+    const saving = deferred<void>();
+    const beforeConnect = vi.fn().mockReturnValueOnce(saving.promise).mockResolvedValue(undefined);
+    let connection!: ReturnType<typeof useEnboxConnection>;
+    function Content() { connection = useEnboxConnection(); return <output>{connection.isConnecting ? 'waiting' : 'ready'}</output>; }
+    const element = (mode: 'visible' | 'hidden') => <Activity mode={mode}>
+      <EnboxProvider client={client} beforeConnect={beforeConnect}><Content /></EnboxProvider>
+    </Activity>;
+    const tree = render(element('visible'));
+    const retired = connection;
+    let pending!: Promise<void>;
+    act(() => { pending = retired.connect(); });
+    const rejected = expect(pending).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { tree.rerender(element('hidden')); await Promise.resolve(); });
+    await rejected;
+    await expect(retired.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    tree.rerender(element('visible'));
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    expect(connection.connect).not.toBe(retired.connect);
+    await act(async () => { await connection.connect(); });
+    expect(client.connect).toHaveBeenCalledOnce();
+    await act(async () => { saving.resolve(); await Promise.resolve(); });
+    expect(client.connect).toHaveBeenCalledOnce();
+    await expect(retired.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    expect(client.dispose).not.toHaveBeenCalled();
+    tree.unmount();
+  });
+
+  it('reopens a context catalog when retained effects resume', async () => {
+    const closes: ReturnType<typeof vi.fn<() => Promise<void>>>[] = [];
+    const open = async () => {
+      const state = Object.freeze({ status: 'ready' as const, contexts: Object.freeze(['visible']) });
+      const close = vi.fn(async () => {});
+      closes.push(close);
+      return {
+        getSnapshot: () => state, subscribe: () => () => {}, ready: async () => state, close,
+      } satisfies ContextView<string>;
+    };
+    function Content() {
+      const state = useContextView(open);
+      return <output>{state.status}</output>;
+    }
+    const tree = render(<Activity mode="visible"><Content /></Activity>);
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    tree.rerender(<Activity mode="hidden"><Content /></Activity>);
+    expect(closes[0]).toHaveBeenCalledOnce();
+    tree.rerender(<Activity mode="visible"><Content /></Activity>);
+    await waitFor(() => expect(closes.length).toBe(2));
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    tree.unmount();
+    expect(closes.every((close) => close.mock.calls.length === 1)).toBe(true);
+  });
+
   it('replaces a retired owned client when Effects resume', async () => {
     const clients: ReturnType<typeof useEnboxClient>[] = [];
     function Content() {

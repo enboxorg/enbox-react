@@ -1,8 +1,10 @@
 import type { ExpandableRecordView, RecordView, RecordViewState } from '@enbox/browser';
 
 import { EnboxBindingChangedError } from '../errors.js';
-import { reportCleanupError, toError } from './errors.js';
+import { toError } from './errors.js';
+import { OwnedViewObserver, type BindingGuard, type ViewAttempt } from './owned-view-observer.js';
 
+export type { BindingGuard } from './owned-view-observer.js';
 export type RecordViewOpener<Item> = (signal: AbortSignal) => Promise<RecordView<Item>>;
 
 export type IdleRecordViewState<Item> = Readonly<{
@@ -19,143 +21,33 @@ export type RecordViewResult<Item> = (RecordViewState<Item> | IdleRecordViewStat
   isLoadingMore: boolean;
 }>;
 
-export type BindingGuard = {
-  isCurrent(): boolean;
-  subscribe(notify: () => void): () => void;
-};
-
-type ViewAttempt<Item> = {
-  readonly controller: AbortController;
-  readonly opening: Promise<void>;
-  view: RecordView<Item> | undefined;
-  unsubscribe: (() => void) | undefined;
-  pagination: Promise<void> | undefined;
-};
-
 const EMPTY_RECORDS = Object.freeze([]);
 const IDLE = Object.freeze({
-  status: 'idle' as const,
-  records: EMPTY_RECORDS,
-  hasMore: false as const,
-  current: false as const,
+  status: 'idle' as const, records: EMPTY_RECORDS, hasMore: false as const, current: false as const,
 });
 const LOADING = Object.freeze({
-  status: 'loading' as const,
-  records: EMPTY_RECORDS,
-  hasMore: false,
-  current: false as const,
+  status: 'loading' as const, records: EMPTY_RECORDS, hasMore: false, current: false as const,
 });
 
-/** An inert observer; the first/last subscriber opens/releases its view. */
-export class RecordViewObserver<Item> {
-  private readonly _listeners = new Set<() => void>();
-  private readonly _idle: RecordViewResult<Item>;
-  private readonly _loading: RecordViewResult<Item>;
-  private _snapshot: RecordViewResult<Item>;
-  private _viewState: RecordViewState<Item> | IdleRecordViewState<Item> = IDLE;
-  private _active = false;
-  private _closed = false;
-  private _attempt: ViewAttempt<Item> | undefined;
-  private _unsubscribeBinding: (() => void) | undefined;
-  private readonly _closing = new Set<Promise<void>>();
+/** Native record state with owned-view lifecycle and record-only pagination. */
+export class RecordViewObserver<Item> extends OwnedViewObserver<
+  RecordViewState<Item>, IdleRecordViewState<Item>, RecordViewResult<Item>, RecordView<Item>
+> {
+  private readonly _pagination: WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>;
 
-  public constructor(
-    private readonly _opener: RecordViewOpener<Item> | null,
-    private readonly _bindingGuard?: BindingGuard,
-    private readonly _keepAlive = false,
-  ) {
-    this._idle = this.result(IDLE, false);
-    this._loading = this.result(LOADING, false);
-    this._viewState = _opener === null ? IDLE : LOADING;
-    this._snapshot = _opener === null ? this._idle : this._loading;
+  public constructor(opener: RecordViewOpener<Item> | null, bindingGuard?: BindingGuard, keepAlive = false) {
+    const pagination = new WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>();
+    super(opener, {
+      idle: IDLE,
+      loading: LOADING,
+      error: (error) => ({ status: 'error', records: EMPTY_RECORDS, hasMore: false, current: false, error }),
+      result: (state, retry, attempt) => Object.freeze({
+        ...state, retry, isLoadingMore: attempt !== undefined && pagination.has(attempt),
+      }),
+      sameResult: (previous, next) => previous.isLoadingMore === next.isLoadingMore,
+    }, bindingGuard, keepAlive);
+    this._pagination = pagination;
   }
-
-  public readonly getSnapshot = (): RecordViewResult<Item> =>
-    !this._closed && this.isBindingCurrent() ? this._snapshot : this._idle;
-
-  public readonly getServerSnapshot = (): RecordViewResult<Item> => this._idle;
-
-  public readonly subscribe = (notify: () => void): (() => void) => {
-    if (this._closed) return () => {};
-    const listener = (): void => { notify(); };
-    this._listeners.add(listener);
-    if (!this._active) this.start();
-    return () => {
-      if (!this._listeners.delete(listener)) return;
-      if (this._listeners.size === 0 && !this._keepAlive) this.stop();
-    };
-  };
-
-  /** Terminal release by a shared store's owner; hook unsubscription is reversible. */
-  public readonly close = async (): Promise<void> => {
-    if (!this._closed) {
-      this._closed = true;
-      this.stop();
-      this._listeners.clear();
-    }
-    await Promise.all(this._closing);
-  };
-
-  /** Wait for usable rows while retaining the store for this operation. */
-  public readonly ready = (options: { signal?: AbortSignal } = {}): Promise<
-    Extract<RecordViewResult<Item>, { status: 'ready' }>
-  > => new Promise((resolve, reject) => {
-    let unsubscribe: (() => void) | undefined;
-    let settled = false;
-    const finish = (error?: unknown): void => {
-      if (settled) return;
-      const state = this.getSnapshot();
-      if (error === undefined && state.status !== 'ready' && state.status !== 'error'
-        && !this._closed && this._opener !== null && this.isBindingCurrent()) return;
-      settled = true;
-      unsubscribe?.();
-      options.signal?.removeEventListener('abort', abort);
-      if (error !== undefined) reject(error);
-      else if (state.status === 'ready') resolve(state);
-      else reject(state.status === 'error' ? state.error : new EnboxBindingChangedError());
-    };
-    const abort = (): void => finish(options.signal?.reason ?? new EnboxBindingChangedError());
-    if (options.signal?.aborted) { abort(); return; }
-    options.signal?.addEventListener('abort', abort, { once: true });
-    unsubscribe = this.subscribe(() => finish());
-    if (settled) unsubscribe();
-    else finish();
-  });
-
-  private start(): void {
-    this._active = true;
-    this._unsubscribeBinding = this._bindingGuard?.subscribe(() => {
-      if (!this.isBindingCurrent()) {
-        this.closeAttempt();
-        this.publish(IDLE, false);
-      }
-    });
-    if (this._opener !== null && this.isBindingCurrent()) {
-      // Automatic opening publishes failures; explicit retry callers receive them.
-      void this.begin().catch(() => {});
-    }
-  }
-
-  private stop(): void {
-    this._active = false;
-    const unsubscribeBinding = this._unsubscribeBinding;
-    this._unsubscribeBinding = undefined;
-    if (unsubscribeBinding !== undefined) this.unsubscribe(unsubscribeBinding);
-    this.closeAttempt();
-    this._viewState = this._opener === null ? IDLE : LOADING;
-    this._snapshot = this._opener === null ? this._idle : this._loading;
-    this.notify();
-  }
-
-  public readonly retry = (): Promise<void> => {
-    if (!this._active || this._opener === null || !this.isBindingCurrent()) {
-      return Promise.reject(new EnboxBindingChangedError());
-    }
-    if (this._attempt !== undefined && this._attempt.view === undefined) {
-      return this._attempt.opening;
-    }
-    return this.begin();
-  };
 
   public readonly loadMore = (): Promise<void> => {
     const attempt = this._attempt;
@@ -166,163 +58,31 @@ export class RecordViewObserver<Item> {
     if (!this.isExpandable(view)) {
       return Promise.reject(new TypeError('This record view does not support loadMore().'));
     }
-    if (attempt.pagination !== undefined) {
-      return attempt.pagination;
-    }
+    const existing = this._pagination.get(attempt);
+    if (existing !== undefined) return existing;
     const pagination = Promise.resolve().then(async () => {
       if (!this.isCurrent(attempt)) throw new EnboxBindingChangedError();
       await view.loadMore();
     }).catch((cause: unknown) => {
       if (this.isCurrent(attempt)) {
         this.publish({
-          status: 'error',
-          records: this._viewState.records,
-          hasMore: this._viewState.hasMore,
-          current: false,
-          error: toError(cause),
-        }, true);
+          status: 'error', records: this._viewState.records, hasMore: this._viewState.hasMore,
+          current: false, error: toError(cause),
+        });
       }
       throw cause;
     }).finally(() => {
       if (this.isCurrent(attempt)) {
-        attempt.pagination = undefined;
-        this.publish(this._viewState, false);
+        this._pagination.delete(attempt);
+        this.publish(this._viewState);
       }
     });
-    attempt.pagination = pagination;
-    // Publish only after the shared operation is available to listeners.
-    this.publish(this._viewState, true);
+    this._pagination.set(attempt, pagination);
+    this.publish(this._viewState);
     return pagination;
   };
 
-  private isBindingCurrent(): boolean {
-    return this._bindingGuard?.isCurrent() ?? true;
-  }
-
-  private isCurrent(attempt: ViewAttempt<Item>): boolean {
-    return this._active
-      && this._attempt === attempt
-      && !attempt.controller.signal.aborted
-      && this.isBindingCurrent();
-  }
-
-  private begin(): Promise<void> {
-    const previous = this._attempt;
-    const attempt: ViewAttempt<Item> = {
-      controller: new AbortController(),
-      opening: Promise.resolve().then(() => this.open(attempt)),
-      view: undefined,
-      unsubscribe: undefined,
-      pagination: undefined,
-    };
-    // Register the replacement before cleanup can request another retry.
-    this._attempt = attempt;
-    this.releaseAttempt(previous);
-    if (this.isCurrent(attempt)) this.publish(LOADING, false);
-    return attempt.opening;
-  }
-
-  private async open(attempt: ViewAttempt<Item>): Promise<void> {
-    try {
-      if (!this.isCurrent(attempt) || this._opener === null) return;
-      const view = await this._opener(attempt.controller.signal);
-      if (!this.isCurrent(attempt)) {
-        this.closeView(view);
-        return;
-      }
-      attempt.view = view;
-      const unsubscribe = view.subscribe(() => {
-        if (!this.isCurrent(attempt)) return;
-        const state = view.getSnapshot();
-        if (this.isCurrent(attempt)) this.publish(state, attempt.pagination !== undefined);
-      });
-      if (!this.isCurrent(attempt)) {
-        this.unsubscribe(unsubscribe);
-        if (this._attempt === attempt) this.closeAttempt();
-        return;
-      }
-      attempt.unsubscribe = unsubscribe;
-      // Subscribe first, then read: opening and listener attachment can have a gap.
-      const state = view.getSnapshot();
-      if (this.isCurrent(attempt)) this.publish(state, attempt.pagination !== undefined);
-    } catch (cause: unknown) {
-      if (this.isCurrent(attempt)) {
-        this.closeAttempt();
-        this.publish({
-          status: 'error',
-          records: EMPTY_RECORDS,
-          hasMore: false,
-          current: false,
-          error: toError(cause),
-        }, false);
-      }
-      throw cause;
-    }
-  }
-
-  private closeAttempt(): void {
-    const attempt = this._attempt;
-    this._attempt = undefined;
-    this.releaseAttempt(attempt);
-  }
-
-  private releaseAttempt(attempt: ViewAttempt<Item> | undefined): void {
-    if (attempt === undefined) return;
-    const unsubscribe = attempt.unsubscribe;
-    attempt.unsubscribe = undefined;
-    if (unsubscribe !== undefined) this.unsubscribe(unsubscribe);
-    attempt.controller.abort();
-    const view = attempt.view;
-    attempt.view = undefined;
-    if (view !== undefined) this.closeView(view);
-  }
-
-  private unsubscribe(unsubscribe: () => void): void {
-    try {
-      unsubscribe();
-    } catch (cause: unknown) {
-      reportCleanupError(cause);
-    }
-  }
-
-  private closeView(view: RecordView<Item>): void {
-    let finish!: () => void;
-    const closing = new Promise<void>((resolve) => { finish = resolve; });
-    this._closing.add(closing);
-    const complete = (): void => { this._closing.delete(closing); finish(); };
-    try {
-      void Promise.resolve(view.close()).catch(reportCleanupError).then(complete);
-    } catch (cause: unknown) {
-      reportCleanupError(cause);
-      complete();
-    }
-  }
-
   private isExpandable(view: RecordView<Item>): view is ExpandableRecordView<Item> {
     return 'loadMore' in view && typeof view.loadMore === 'function';
-  }
-
-  private result(
-    state: RecordViewState<Item> | IdleRecordViewState<Item>,
-    isLoadingMore: boolean,
-  ): RecordViewResult<Item> {
-    return Object.freeze({ ...state, retry: this.retry, isLoadingMore });
-  }
-
-  private publish(state: RecordViewState<Item> | IdleRecordViewState<Item>, isLoadingMore: boolean): void {
-    if (state === this._viewState && isLoadingMore === this._snapshot.isLoadingMore) return;
-    this._viewState = state;
-    if (state === IDLE && !isLoadingMore) {
-      this._snapshot = this._idle;
-    } else if (state === LOADING && !isLoadingMore) {
-      this._snapshot = this._loading;
-    } else {
-      this._snapshot = this.result(state, isLoadingMore);
-    }
-    this.notify();
-  }
-
-  private notify(): void {
-    for (const listener of this._listeners) listener();
   }
 }

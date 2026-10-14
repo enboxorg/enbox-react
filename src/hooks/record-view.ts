@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import type {
   BindingGuard,
@@ -20,7 +20,12 @@ export function useRecordViewBinding<Item>(
     () => isRecordStore<Item>(opener) ? opener : new RecordViewObserver(opener, bindingGuard),
     [opener, bindingGuard],
   );
-  const snapshot = useSyncExternalStore(observer.subscribe, observer.getSnapshot, observer.getServerSnapshot);
+  const subscribe = useCallback((notify: () => void) => observer.subscribe(notify), [observer]);
+  const getSnapshot = useCallback(() => observer.getSnapshot(), [observer]);
+  const getServerSnapshot = useCallback(() => observer.getServerSnapshot(), [observer]);
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const retry = useCallback(() => observer.retry(), [observer]);
+  const snapshot = useMemo(() => Object.freeze({ ...state, retry }), [state, retry]);
   return { observer, snapshot };
 }
 

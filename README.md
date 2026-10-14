@@ -112,8 +112,11 @@ function WalletButton() {
 This hook provides usable connection state, wallet repair, shared progress,
 and actions that reject actionable failures while treating denial quietly.
 Native `useConnection` and `useConnectionActions` remain available for raw
-snapshot outcomes. A per-call `connect({ wallet: options })` retains the
-provider's app identity while changing the wallet route.
+snapshot outcomes. A per-call `connect({ wallet: options })` inherits the
+client factory's wallet defaults while changing the wallet route, for both
+owned and borrowed providers. Explicit per-call fields override those defaults.
+For a native store created outside `createEnboxClient`, supply the app identity
+in the per-call wallet options.
 
 Pass `beforeConnect` or `beforeDisconnect` to the provider for application
 guards, such as saving edits. Disconnect progress includes the guard. Failed
@@ -122,13 +125,43 @@ guards preserve the connected session. An explicit
 owns the decision and its UI. Binding changes during an awaited guard prevent
 the action from targeting a replacement identity.
 
+Provider retirement also invalidates captured connection actions and fences
+guards still awaiting application work. Strict Mode replay preserves them;
+Activity resumption after retirement creates a fresh workflow controller.
+Operations already issued to the native client keep their original Promise
+outcome.
+
 ## Resolve profiles
 
-`useProfile(enbox, did)` and `useProfiles(enbox, dids)` read published profile
-text and provide `avatarUrl` and `heroUrl`. They share one native reader per
-source, manage image URL leases, and release watches on unmount. Empty or
-disabled selections perform no reads. No provider is required for an explicit
-source, including `Enbox.anonymous()`.
+`useProfile(enbox, did)` reads one published profile; `useProfiles(enbox, dids)`
+returns a map of the same result shape keyed by DID. Each result includes text,
+`avatarUrl`, `heroUrl`, `status`, and native per-field status/failure metadata
+under `fields`. They share native readers by source and image policy, manage image URL
+leases, and release watches on unmount. Unchanged DID results retain their
+references when another person updates.
+
+```tsx
+const person = useProfile(enbox, did, { images: 'off' });
+if (person.status === 'loading') return <p>Looking up profile…</p>;
+if (person.fields.profile.failure) return <p>Profile lookup failed.</p>;
+return <span>{person.displayName ?? did}</span>;
+```
+
+Status is `idle`, `loading`, `settled`, `not-found`, or `error`; it reflects the
+fields requested by this consumer. Image failures remain visible in
+`fields.avatar` or `fields.hero` while usable text stays available. A missing
+profile and a failed lookup are distinct results.
+
+Both hooks accept `{ enabled, images }`. Images default to `eager` for existing
+consumers; use `off` for text-only lists or `lazy` to defer image downloads until
+calling the result's `loadImages()`. Field failures appear in metadata;
+disabled or retired controls reject. Empty or disabled selections perform no reads. The
+existing `useProfile(enbox, did, false)` form still disables the lookup.
+No provider is required for an explicit source, including `Enbox.anonymous()`.
+Text-only consumers use a native reader with images disabled, so earlier
+image requests cannot make later text lookups download images. Explicit lazy
+activation can perform another root-profile read; already usable text remains
+visible while that read settles.
 
 ## Read and write records
 
@@ -162,8 +195,12 @@ Paths, filters, decoded values, and mutation variables remain inferred.
 Nested views require `within`, using the parent's exact context ID. Inline
 query objects with equal contents keep the same view.
 
-Without `materialize: true`, rows are native record handles and their payloads
-remain lazy. A positive `pagination.limit` is required. `loadMore()` expands
+Without `materialize`, rows are native record handles and their payloads
+remain lazy. `materialize: { children: ['note/preview'] }` also decodes selected
+direct singleton children alongside each parent, with inferred child values
+under `row.children.preview`. Selected children must declare
+`$recordLimit.max: 1`; the SDK validates malformed selections. A positive
+`pagination.limit` is required. `loadMore()` expands
 the retained prefix; `retry()` reopens the original selection and page limit.
 Both controls return Promises that reject on failure and also publish errors
 in the result. Concurrent opening or pagination calls share their Promise.
@@ -202,6 +239,49 @@ aborts. Release controller subscriptions with `stop()` when retiring them.
 The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
 opener overload `useRecordView(opener)` own a view for each hook instead.
 
+## Observe memberships and invitations
+
+Native membership and invitation observers also return `RecordView` instances.
+Use `useRecordView` with a memoized opener to manage their opening, errors,
+retry, and cleanup. For an owned page context:
+
+```tsx
+import { useMemo } from 'react';
+import { useRecordView } from '@enbox/react';
+
+const openMembers = useMemo(() => page == null ? null
+  : (signal: AbortSignal) => page.members().observe({ signal }), [page]);
+const members = useRecordView(openMembers);
+```
+
+Keep member projections and access-change policies in your application.
+For an already-opened view owned by an application controller, use
+`useObservableStore(view, fallback)` to borrow its snapshot and subscription.
+This also works for native context catalogs, whose snapshots contain
+`contexts` rather than `records`.
+
+## Own context catalogs
+
+`useContextView(opener)` manages the asynchronous lifetime of a native
+`ContextView`. Its result preserves native `contexts`, `status`, and `error`,
+adds `idle` for a disabled selection, and provides `retry()`.
+
+```tsx
+const protocol = useProtocol(NotebookProtocol);
+const openContexts = useMemo(() => protocol === undefined ? null
+  : (signal: AbortSignal) => protocol.contexts.observe({
+      access: 'member', materializeRoot: true, signal,
+    }), [protocol]);
+const catalog = useContextView(openContexts);
+```
+
+For controllers and React consumers sharing a catalog, use
+`createContextStore(opener, { signal })` from `@enbox/react/config`, then
+`useContextView(store)` or `useObservableStore(store, fallback)`. The store has
+`ready()`, `retry()`, and `close()` with the same owner-lifetime contract as
+`createRecordStore`. Context catalogs have no pagination or replication
+`current` flag; individual materialized roots retain their native record state.
+
 ## Mutations
 
 Mutation runners check the rendered facade and session before executing and
@@ -232,6 +312,7 @@ also keeps an abandoned render from replacing a committed callback.
 | `useProtocol(protocol)` | Typed facade binding, recreated when the facade changes. |
 | `useObservableStore(store, fallback)` | Borrowed observable with a stable immutable server/empty fallback. |
 | `useRecordView(opener)` | Owns a view opened by a memoized callback receiving an abort signal; `null` releases it. |
+| `useContextView(opener)` | Owns a native context catalog, or borrows a shared context store; `null` releases the selection. |
 
 The [architecture](https://github.com/enboxorg/enbox-react/blob/main/docs/architecture.md)
 describes connection bindings, resource ownership, query identity, and async
