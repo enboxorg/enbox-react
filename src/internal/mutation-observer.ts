@@ -5,23 +5,25 @@ import { isConnectionBindingCurrent, subscribeToConnectionBinding } from './conn
 import { EnboxBindingChangedError, EnboxNotConnectedError } from '../errors.js';
 import { reportCleanupError, toError } from './errors.js';
 
-export type EnboxMutationSnapshot = Readonly<{
+export type EnboxMutationSnapshot<Variables = unknown> = Readonly<{
   pendingCount: number;
+  pendingVariables: readonly Variables[];
   isPending: boolean;
   error: Error | undefined;
 }>;
 
-const EMPTY: EnboxMutationSnapshot = Object.freeze({
+const EMPTY: EnboxMutationSnapshot<never> = Object.freeze({
   pendingCount: 0,
+  pendingVariables: Object.freeze([]),
   isPending: false,
   error: undefined,
 });
 
 /** Subscribers own presentation state for one session; each call owns its Promise. */
-export class EnboxMutationObserver {
+export class EnboxMutationObserver<Variables = unknown> {
   private readonly _listeners = new Set<() => void>();
-  private readonly _pending = new Set<number>();
-  private _snapshot = EMPTY;
+  private readonly _pending = new Map<number, Variables>();
+  private _snapshot: EnboxMutationSnapshot<Variables> = EMPTY;
   private _active = false;
   private _generation = 0;
   private _sequence = 0;
@@ -33,8 +35,8 @@ export class EnboxMutationObserver {
     private readonly _expected: ConnectionBinding,
   ) {}
 
-  public readonly getSnapshot = (): EnboxMutationSnapshot => this.isCurrent() ? this._snapshot : EMPTY;
-  public readonly getServerSnapshot = (): EnboxMutationSnapshot => EMPTY;
+  public readonly getSnapshot = (): EnboxMutationSnapshot<Variables> => this.isCurrent() ? this._snapshot : EMPTY;
+  public readonly getServerSnapshot = (): EnboxMutationSnapshot<Variables> => EMPTY;
   public readonly subscribe = (notify: () => void): (() => void) => {
     // Each subscription owns its cleanup, even when callbacks are identical.
     const listener = (): void => { notify(); };
@@ -72,9 +74,9 @@ export class EnboxMutationObserver {
     this.publish(undefined);
   };
 
-  public async run<Variables, Result>(
-    operation: (enbox: Enbox, variables: Variables) => Promise<Result>,
-    variables: Variables,
+  public async run<Input extends Variables, Result>(
+    operation: (enbox: Enbox, variables: Input) => Promise<Result>,
+    variables: Input,
   ): Promise<Result> {
     if (!this._active || !this.isCurrent()) throw new EnboxBindingChangedError();
     const id = ++this._sequence;
@@ -87,7 +89,7 @@ export class EnboxMutationObserver {
     }
 
     const generation = this._generation;
-    this._pending.add(id);
+    this._pending.set(id, variables);
     this.publish(undefined);
     try {
       // A pending-state listener can synchronously retire this binding.
@@ -123,7 +125,13 @@ export class EnboxMutationObserver {
     if (pendingCount === this._snapshot.pendingCount && error === this._snapshot.error) return;
     this._snapshot = pendingCount === 0 && error === undefined
       ? EMPTY
-      : Object.freeze({ pendingCount, isPending: pendingCount > 0, error });
+      : Object.freeze({
+        pendingCount,
+        pendingVariables: pendingCount === this._snapshot.pendingCount
+          ? this._snapshot.pendingVariables : Object.freeze([...this._pending.values()]),
+        isPending: pendingCount > 0,
+        error,
+      });
     this.notify();
   }
 

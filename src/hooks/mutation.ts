@@ -11,7 +11,11 @@ import { useConnection } from './connection.js';
 import { useEnboxClient } from '../provider.js';
 
 export type EnboxMutation<Variables, Result> = (enbox: Enbox, variables: Variables) => Promise<Result>;
-export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot & Readonly<{
+export type EnboxMutationOptions = Readonly<{
+  /** Changing this owner resets presentation without cancelling issued writes. */
+  scope?: unknown;
+}>;
+export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot<Variables> & Readonly<{
   run: (variables: Variables) => Promise<Result>;
   reset: () => void;
   /** Check before caller UI effects after an issued write finishes. */
@@ -21,12 +25,13 @@ export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot & Rea
 /** Invokes once through the rendered session; never redirects old UI to a new identity. */
 export function useEnboxMutation<Variables = void, Result = unknown>(
   operation: EnboxMutation<Variables, Result>,
+  options: EnboxMutationOptions = {},
 ): EnboxMutationResult<Variables, Result> {
   const client = useEnboxClient();
   const expected = useConnection(selectConnectionBinding, sameConnectionBinding);
   const observer = useMemo(
-    () => new EnboxMutationObserver(client, expected),
-    [client, expected],
+    () => new EnboxMutationObserver<Variables>(client, expected),
+    [client, expected, options.scope],
   );
   const snapshot = useSyncExternalStore(
     observer.subscribe,
