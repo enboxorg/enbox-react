@@ -5,6 +5,8 @@ if (!starterDirectory) throw new Error('Run bun run test:browser to verify a fre
 
 export default defineConfig({
   testDir: 'tests/browser',
+  // The update check rebuilds shared files while both Vite servers are running.
+  workers: 1,
   timeout: 30_000,
   use: { baseURL: 'http://127.0.0.1:4173', headless: true, viewport: { width: 1280, height: 900 } },
   webServer: [

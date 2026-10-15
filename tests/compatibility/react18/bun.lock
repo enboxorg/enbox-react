@@ -12,6 +12,7 @@
       },
       "devDependencies": {
         "@enbox/api": "0.6.87",
+        "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
         "@types/node": "22.19.15",
         "@types/react": "18.3.28",

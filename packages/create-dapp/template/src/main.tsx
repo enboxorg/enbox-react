@@ -5,12 +5,12 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
 import { config } from './application.js';
+import workerPath from './sw.ts?worker&url';
 import './style.css';
 
 /** Wait for this app's worker to control the page before initializing Enbox. */
 async function prepareBrowser(): Promise<void> {
   if (!('serviceWorker' in navigator)) throw new Error('This browser needs service worker support.');
-  const workerPath = `${import.meta.env.BASE_URL}${import.meta.env.DEV ? 'dev-sw.js?dev-sw' : 'sw.js'}`;
   const workerUrl = new URL(workerPath, window.location.href).href;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let finished = false;
@@ -18,7 +18,7 @@ async function prepareBrowser(): Promise<void> {
   try {
     await Promise.race([
       (async () => {
-        await navigator.serviceWorker.register(workerUrl, { type: 'module' });
+        await navigator.serviceWorker.register(workerUrl, { type: 'module', scope: import.meta.env.BASE_URL });
         if (finished) throw new Error('Service worker startup wait ended.');
         await navigator.serviceWorker.ready;
         if (finished) throw new Error('Service worker startup wait ended.');

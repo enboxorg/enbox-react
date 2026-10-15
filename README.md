@@ -418,6 +418,6 @@ offline shell, and controlled connected UI. Install Chromium with
 `bunx --no-install playwright install chromium` if it is not already available.
 
 The automated tests do not perform wallet approval on a real account. The
-example provides that flow for manual integration testing. See
+starter provides that flow for manual integration testing. See
 [testing](https://github.com/enboxorg/enbox-react/blob/main/docs/testing.md)
 for automated coverage and integration boundaries.

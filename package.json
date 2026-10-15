@@ -43,20 +43,16 @@
   "devDependencies": {
     "@enbox/api": "0.6.87",
     "@playwright/test": "1.58.2",
+    "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/node": "22.19.15",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.2.3",
     "@types/use-sync-external-store": "1.5.0",
-    "@vitejs/plugin-react": "5.2.0",
     "jsdom": "26.1.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",
-    "vite": "6.4.3",
-    "vite-plugin-pwa": "0.21.2",
-    "vitest": "4.1.11",
-    "workbox-precaching": "7.4.0",
-    "workbox-routing": "7.4.0"
+    "vitest": "4.1.11"
   },
   "publishConfig": {
     "access": "public",

@@ -22,9 +22,9 @@ changes.
 | Query serialization | Deterministic values, shared acyclic objects, and rejection of unsupported or effectful values. |
 | Native SDK integration | Encrypted local creates, patches, deletes, live record updates, and prefix pagination through a real SDK view. |
 | Public types | Built declarations preserve decoded values, mutation variables, exact paths, nested contexts, filters, and configuration constraints. |
-| Package exports | Built JavaScript/declaration targets exist, client directives are preserved, and public modules import without browser globals. |
+| Package exports | Built JavaScript/declaration targets exist, client directives are preserved, public modules import without browser globals, and direct dependencies remain pinned. |
 | Generator | Packed-template contents, JSON customization, empty-destination guards, safe command output, and failed-write cleanup. |
-| Browser | Frozen standalone install/build, production worker control/offline reload, and connected UI with a controlled native client. |
+| Browser | Frozen standalone install/build, development and production worker control, worker updates/cache cleanup, offline reload, and connected UI with a controlled native client. |
 
 ## Fixtures and cleanup
 

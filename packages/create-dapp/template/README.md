@@ -23,9 +23,14 @@ npm run preview
 ```
 
 The app owns its service worker. Startup waits until that worker controls the
-page before initializing Enbox. Production builds precache the app shell for
+page before initializing Enbox. Vite bundles the worker without a separate PWA
+toolchain. Production builds precache the app shell for
 later offline visits; `npm run preview` serves that built app locally. Deploy
 the generated `dist` directory on an HTTPS origin with service worker support.
+
+Direct dependencies use exact versions; `npm ci` installs the committed
+dependency tree. Update the manifest and lockfile together when accepting
+dependency or security fixes.
 
 ## Make it yours
 

@@ -59,23 +59,36 @@ to `main`; its actions are pinned to immutable commits.
 Keep `@enbox/browser` pinned and React peers limited to tested releases so
 applications use their own SDK and React instances. `use-sync-external-store`
 is the runtime dependency.
-Development dependencies support only the build, tests, and example.
+Root development dependencies support only SDK compilation and tests.
 
 | Development dependencies | Use |
 | --- | --- |
 | `@enbox/api` | Native DWN integration fixtures through `@enbox/api/testing`. |
-| `vitest`, `@testing-library/react`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
+| `vitest`, `@testing-library/react`, `@testing-library/dom`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
 | `@playwright/test` | Production browser tests. |
 | `typescript`, `@types/react`, `@types/use-sync-external-store` | Compilation, declarations, and type contracts. |
-| `react-dom`, `@types/react-dom` | Example rendering and SSR/hydration tests. |
+| `react-dom`, `@types/react-dom` | Renderer, SSR, and hydration tests. |
 | `@types/node` | Node APIs in tests and tooling configuration. |
-| `vite`, `@vitejs/plugin-react` | Example development, build, and preview. |
-| `vite-plugin-pwa`, `workbox-precaching`, `workbox-routing` | Example service worker and offline shell. |
 
 The single starter source lives in `packages/create-dapp/template`. Keep its
 configuration independent of the repository root. Its manifest and npm lock
 must change together when updating dependencies. The generator customizes JSON
 metadata only; its published archive includes this same template.
+The starter owns its Vite, React Fast Refresh, TypeScript, and type dependencies.
+Vite bundles the application worker; a scoped cache provides the offline shell.
+The generator itself has no dependencies. Add packages where they are used,
+and prefer existing platform or tool APIs when they cover the needed behavior.
+
+Pin direct runtime and development dependencies to exact versions. Package
+checks enforce this in all manifests; `.npmrc` and `bunfig.toml` also save exact
+versions. Peer declarations describe compatibility, rather than pinning an
+application's installation; this SDK currently lists the releases it tests.
+Committed lockfiles fix transitive versions, and CI uses frozen installs.
+Consumers use their own application lockfiles; they do not inherit this
+repository's dependency tree when installing the published SDK.
+Exact pins make updates deliberate, but do not establish that a release is
+safe or automatically bring in security fixes. Review dependency updates and
+their lockfile changes, including advisories, before accepting them.
 
 `test:browser` creates a temporary project outside the repository and installs
 both tested archives. Only the local SDK dependency and its integrity are
@@ -92,7 +105,7 @@ manifest and lockfile together. Do not commit relaxed installation settings.
 
 Set a new exact package version before each release. The manual
 `Publish preview` GitHub workflow runs only on `main`. It verifies both
-React versions and the production browser example, then publishes the same
+React versions and the production starter, then publishes the same
 archive used by the React 18 consumer checks to the `next` npm tag with
 provenance. Configure `NPM_TOKEN` in the repository's Actions secrets with
 publish access to `@enbox/react`.
