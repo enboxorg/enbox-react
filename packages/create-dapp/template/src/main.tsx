@@ -1,8 +1,10 @@
 import { activatePolyfills } from '@enbox/browser';
+import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
+import { config } from './application.js';
 import './style.css';
 
 /** Wait for this app's worker to control the page before initializing Enbox. */
@@ -31,7 +33,7 @@ async function prepareBrowser(): Promise<void> {
         });
       })(),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('The notes service worker did not become ready. Reload to try again.')), 20_000);
+        timer = setTimeout(() => reject(new Error('The app service worker did not become ready. Reload to try again.')), 20_000);
       }),
     ]);
     activatePolyfills({ serviceWorker: false });
@@ -43,8 +45,8 @@ async function prepareBrowser(): Promise<void> {
 }
 
 void prepareBrowser().then(() => {
-  createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+  createRoot(document.getElementById('root')!).render(<StrictMode><EnboxProvider config={config}><App /></EnboxProvider></StrictMode>);
 }).catch((cause: unknown) => {
   const root = document.getElementById('root')!;
-  root.textContent = cause instanceof Error ? cause.message : 'Could not open notes.';
+  root.textContent = cause instanceof Error ? cause.message : 'Could not open the app.';
 });

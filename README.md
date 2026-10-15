@@ -4,18 +4,44 @@ React bindings for Enbox connections, typed live records, and session-bound
 mutations. The package uses `@enbox/browser`'s connection store and observable
 APIs.
 
-## Run locally
+## Create a dapp
+
+The `@enbox/create-dapp` generator is being prepared for its first npm release.
+It creates a standalone React application with wallet connection, a public
+profile card, and a small encrypted emoji-choice demo. The demo lives entirely
+under `src/demo/`; the connection and profile shell can stay as you build.
+
+After publication:
+
+```sh
+npm create @enbox/dapp@latest my-app
+cd my-app
+npm ci
+npm run dev
+```
+
+To try the generator from this checkout, use
+`node packages/create-dapp/bin/create-dapp.mjs my-app` instead of `npm create`.
+See [the generator](packages/create-dapp/README.md) and
+[the starter](packages/create-dapp/template/README.md) for customization.
+
+## Work on the SDK and starter
 
 ```sh
 bun install --frozen-lockfile
 bun run check
-bun run example:dev
+bun run starter:dev
 ```
 
-The example uses the package's built exports, so run `bun run build` after
-changing library code. It registers its application-owned worker before
-rendering or initializing Enbox. The browser SDK automatically activates
-updated workers.
+`starter:dev` installs the starter's own frozen npm dependencies and serves
+its source with Vite. It uses the released SDK pinned in its manifest.
+`bun run test:browser` instead packs the current SDK and generator, creates an
+app outside this repository, and verifies its frozen install, types,
+production build, worker control, and offline reload. Connected-UI tests use
+a controlled native client; they do not approve a real wallet account.
+
+The starter registers its application-owned worker before rendering or
+initializing Enbox. The browser SDK automatically activates updated workers.
 
 Runtime and development dependencies use exact versions; peers accept only
 the explicitly tested releases. Bun defaults to exact saves, frozen lockfile
@@ -56,7 +82,7 @@ export const config = {
 
 Protocol identifiers should be stable URLs owned by your application.
 `recordCodecs.json<T>()` provides type inference; pass a standalone `validator`
-for runtime validation. The example demonstrates a small domain validator.
+for runtime validation. The starter demonstrates a small domain validator.
 
 The factory returns the native `ConnectionStore`. It creates no manager,
 storage, socket, or browser UI until initialization or a connection action.
@@ -384,10 +410,11 @@ bun run check
 bun run test:browser
 ```
 
-`check` builds ESM and declarations, checks the example and positive/negative
-type contracts, and runs lifecycle, query, mutation, hydration, package-export,
-and real local DWN tests. The browser test builds the example and verifies a
-controlling worker and offline shell reload with Chromium. Install that browser with
+`check` builds ESM and declarations, checks positive/negative type contracts,
+and runs lifecycle, query, mutation, hydration, package-export, generator,
+and real local DWN tests. The browser check generates an app from the packed
+CLI, installs the packed SDK, and checks its types, production build, worker,
+offline shell, and controlled connected UI. Install Chromium with
 `bunx --no-install playwright install chromium` if it is not already available.
 
 The automated tests do not perform wallet approval on a real account. The

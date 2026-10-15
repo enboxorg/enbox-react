@@ -5,18 +5,21 @@
 Use the Node and Bun versions in `.node-version` and `.bun-version`.
 Install dependencies with `bun install --frozen-lockfile`. Dependency versions
 and the allowed peer releases are fixed. `bunfig.toml` disables automatic
-runtime installation. The Notes example uses built package exports.
+runtime installation. The standalone starter has its own npm lockfile and
+uses published SDK exports. Its isolated browser check installs the current
+packed SDK instead.
 
 | Command | Purpose |
 | --- | --- |
 | `bun run build` | Clear generated output and build ESM, declarations, and source maps. |
-| `bun run typecheck` | Build public declarations and check source, type contracts, tooling configuration, and the example. |
+| `bun run typecheck` | Build public declarations and check source, type contracts, and tooling configuration. |
 | `bun run test` | Run unit, React, and native local DWN tests. |
 | `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
 | `bun run check` | Run type checks, unit/integration tests, and package checks. |
-| `bun run test:browser` | Build the production example and run Chromium startup/offline tests. |
-| `bun run example:dev` | Serve the Notes example; rebuild the library after editing its source. |
+| `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
+| `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
+| `bun run starter:dev` | Install the canonical starter's frozen npm dependencies and serve it with Vite. |
 
 Install Chromium with `bunx --no-install playwright install chromium` before
 running browser tests if it is not available. See [testing](docs/testing.md)
@@ -46,7 +49,7 @@ that repeat the code or describe each parameter without adding context.
 
 Add regression tests for changes to resource ownership, session guards, or
 async error handling. Run the relevant suite while developing, then run
-`check`. Changes to startup, worker behavior, or the example also need the
+`check`. Changes to startup, worker behavior, or the starter also need the
 browser suite. Generated `dist` and test reports are not committed.
 The repository workflow runs both check suites on pull requests and pushes
 to `main`; its actions are pinned to immutable commits.
@@ -69,6 +72,16 @@ Development dependencies support only the build, tests, and example.
 | `vite`, `@vitejs/plugin-react` | Example development, build, and preview. |
 | `vite-plugin-pwa`, `workbox-precaching`, `workbox-routing` | Example service worker and offline shell. |
 
+The single starter source lives in `packages/create-dapp/template`. Keep its
+configuration independent of the repository root. Its manifest and npm lock
+must change together when updating dependencies. The generator customizes JSON
+metadata only; its published archive includes this same template.
+
+`test:browser` creates a temporary project outside the repository and installs
+both tested archives. Only the local SDK dependency and its integrity are
+replaced in the generated lockfile; registry dependencies remain frozen. Test
+fixtures are added after the production build and are never generated for users.
+
 For an intentional dependency change, edit the exact version in
 `package.json`, temporarily set `install.frozenLockfile = false` in
 `bunfig.toml`, and run `bun install`. Restore frozen installs immediately,
@@ -89,3 +102,9 @@ Dispatch the workflow after merging the release change:
 ```sh
 gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
 ```
+
+The generator is a separate npm package, `@enbox/create-dapp`. After approval,
+dispatch `publish-create-dapp.yml` on `main`. It runs SDK and generator checks,
+verifies the generated app, and publishes that tested generator archive to
+`latest` with provenance. `NPM_TOKEN` needs access to this package too. Merging
+changes does not publish either package automatically.

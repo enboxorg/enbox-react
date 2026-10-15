@@ -3,7 +3,8 @@
 Run `bun run check` for the library, type contracts, configuration files, and
 built-package tests. Run `bun run test:react18` to validate the installed
 archive with React 18.3.1; the authoring suite uses React 19.3.0. Run
-`bun run test:browser` for the production Notes example.
+`bun run test:generator` for the CLI and `bun run test:browser` for a freshly
+generated application outside this repository.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and dependency
 changes.
 
@@ -22,7 +23,8 @@ changes.
 | Native SDK integration | Encrypted local creates, patches, deletes, live record updates, and prefix pagination through a real SDK view. |
 | Public types | Built declarations preserve decoded values, mutation variables, exact paths, nested contexts, filters, and configuration constraints. |
 | Package exports | Built JavaScript/declaration targets exist, client directives are preserved, and public modules import without browser globals. |
-| Browser | Production service-worker control, successful startup, no page errors, and offline shell reload. |
+| Generator | Packed-template contents, JSON customization, empty-destination guards, safe command output, and failed-write cleanup. |
+| Browser | Frozen standalone install/build, production worker control/offline reload, and connected UI with a controlled native client. |
 
 ## Fixtures and cleanup
 
@@ -62,8 +64,13 @@ resolution.
 
 ## Integration coverage
 
-The browser suite runs without approving a real wallet account. Wallet
-approval and delegated remote replication need separate integration runs.
+The browser suite runs without approving a real wallet account. Production
+checks exercise the generated app and its worker. A separate development-only
+fixture tests the actual SDK provider/hooks against a controlled native client
+for connection, profile fallback, observed emoji writes, error retries, and
+disconnect during pending work. The fixture is absent from generated projects
+and production builds. Wallet approval and delegated remote replication need
+separate integration runs.
 Plain SSR is covered; a framework-specific server-component application is
 not part of the automated fixtures. Offline testing verifies the application
 shell, not a remote write queue or shared-context editing behavior.
