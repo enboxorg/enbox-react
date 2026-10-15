@@ -49,12 +49,13 @@ export class EnboxMutationObserver<Variables = unknown> {
       if (!this._listeners.delete(listener) || this._listeners.size !== 0) return;
       const unsubscribe = this._unsubscribe;
       this._unsubscribe = undefined;
+      // Native cleanup can subscribe again and start work for the replacement.
+      this.clear();
       try {
         unsubscribe?.();
       } catch (cause: unknown) {
         reportCleanupError(cause);
       }
-      this.clear();
     };
   };
 

@@ -57,6 +57,10 @@ They are followed by a facade/session check, so delayed guards cannot sign out
 or replace another identity. Disconnect also supersedes a connect waiting on a
 guard. Raw snapshot hooks retain their native contracts.
 
+Subscription cleanup detaches its own handle before calling native cleanup,
+which can synchronously subscribe again. Mutation cleanup also retires its old
+presentation first, so it cannot erase work started by a replacement subscriber.
+
 ## Profile resources
 
 Profile observers are inert during render. Their first subscription retains a
