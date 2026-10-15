@@ -99,6 +99,32 @@ describe('profile state with the native SDK reader', () => {
     expect(source.records.read).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves the native disposal rejection shared by concurrent image waiters', async () => {
+    const images = deferred<{ status: { code: number } }>();
+    const source = { records: {
+      query: async () => ({ status: { code: 200 }, records: [profileRecord('Alice')] }),
+      read: vi.fn(() => images.promise),
+    } } satisfies ProfileReaderSource;
+    const first = renderHook(() => useProfile(source, 'did:example:alice', { images: 'lazy' }));
+    const second = renderHook(() => useProfile(source, 'did:example:alice', { images: 'lazy' }));
+    await waitFor(() => expect(first.result.current.status).toBe('settled'));
+    let outcomes!: Promise<PromiseSettledResult<void>[]>;
+    act(() => {
+      outcomes = Promise.allSettled([first.result.current.loadImages(), second.result.current.loadImages()]);
+    });
+    await waitFor(() => expect(source.records.read).toHaveBeenCalledTimes(2));
+    first.unmount();
+    second.unmount();
+    const [one, two] = await outcomes;
+    expect(one?.status).toBe('rejected');
+    expect(two?.status).toBe('rejected');
+    if (one?.status === 'rejected' && two?.status === 'rejected') {
+      expect(one.reason).toBe(two.reason);
+      expect(one.reason).toMatchObject({ message: expect.stringContaining('disposed while loading profile') });
+    }
+    images.resolve({ status: { code: 404 } });
+  });
+
   it('retains usable lazy text while the image reader settles its own native root state', async () => {
     const query = deferred<{ status: { code: number }; records: ReturnType<typeof profileRecord>[] }>();
     const source = { records: {

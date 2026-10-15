@@ -50,7 +50,6 @@ let imageUrlPool: ReturnType<typeof createBlobUrlPool> | undefined;
 /** Shares native reads by source and policy; construction acquires no resources. */
 class SharedProfileReader {
   private reader: ProfileReader | undefined;
-  private readonly pendingImageLoads = new Map<string, Promise<void>>();
   private references = 0;
   private generation = 0;
 
@@ -75,7 +74,6 @@ class SharedProfileReader {
       queueMicrotask(() => {
         if (this.references !== 0 || this.generation !== generation) return;
         this.reader = undefined;
-        this.pendingImageLoads.clear();
         try {
           reader.dispose();
         } catch (cause) {
@@ -84,18 +82,6 @@ class SharedProfileReader {
       });
     };
     return { reader, release };
-  }
-
-  public loadImages(reader: ProfileReader, did: string): Promise<void> {
-    const pending = this.pendingImageLoads.get(did);
-    if (pending !== undefined) return pending;
-    const request = Promise.resolve().then(async () => { await reader.loadImages(did); });
-    this.pendingImageLoads.set(did, request);
-    const finish = (): void => {
-      if (this.pendingImageLoads.get(did) === request) this.pendingImageLoads.delete(did);
-    };
-    void request.then(finish, finish);
-    return request;
   }
 }
 
@@ -151,10 +137,9 @@ export class ProfilesObserver {
   private bindings = new Map<string, ProfileBinding>();
   private readonly idleProfiles: ReadonlyMap<string, ProfileResult>;
   private snapshot: ReadonlyMap<string, ProfileResult>;
-  private readonly requestedImageDids = new Set<string>();
   private reader: ProfileReader | undefined;
   private lazyImageReader: ProfileReader | undefined;
-  private readonly lazyImageWatches = new Map<string, () => void>();
+  private readonly lazyImageWatches = new Map<string, (() => void) | undefined>();
   private stopWatch: (() => void) | undefined;
   private releaseReader: (() => void) | undefined;
   private releaseLazyImageReader: (() => void) | undefined;
@@ -216,11 +201,10 @@ export class ProfilesObserver {
     this.generation += 1;
     this.reader = undefined;
     this.lazyImageReader = undefined;
-    this.requestedImageDids.clear();
     try { this.stopWatch?.(); } catch (cause) { reportCleanupError(cause); }
     this.stopWatch = undefined;
     for (const stop of this.lazyImageWatches.values()) {
-      try { stop(); } catch (cause) { reportCleanupError(cause); }
+      try { stop?.(); } catch (cause) { reportCleanupError(cause); }
     }
     this.lazyImageWatches.clear();
     for (const binding of this.bindings.values()) {
@@ -246,7 +230,8 @@ export class ProfilesObserver {
     if (this.images === 'off') throw new TypeError('Profile images are disabled for this consumer.');
     const reader = this.images === 'lazy' ? this.retainImages(did, generation) : this.reader;
     if (!this.isCurrent(generation)) throw new EnboxBindingChangedError();
-    await sharedReaderFor(this.source, 'eager').loadImages(reader, did);
+    // The native reader coalesces concurrent requests for this DID.
+    await Promise.resolve().then(async () => { await reader.loadImages(did); });
     // Retirement fences publication without replacing an already-issued outcome.
     if (this.isCurrent(generation)) this.update();
   }
@@ -258,8 +243,9 @@ export class ProfilesObserver {
       this.releaseLazyImageReader = release;
     }
     const reader = this.lazyImageReader;
-    if (this.requestedImageDids.has(did)) return reader;
-    this.requestedImageDids.add(did);
+    if (this.lazyImageWatches.has(did)) return reader;
+    // Reserve demand before synchronous watch notifications can reenter loading.
+    this.lazyImageWatches.set(did, undefined);
     try {
       let subscribing = true;
       const stop = reader.watch([did], () => {
@@ -274,11 +260,10 @@ export class ProfilesObserver {
       this.update();
     } catch (cause) {
       if (this.isCurrent(generation)) {
-        this.requestedImageDids.delete(did);
         const stop = this.lazyImageWatches.get(did);
         this.lazyImageWatches.delete(did);
         try { stop?.(); } catch (cleanup) { reportCleanupError(cleanup); }
-        if (this.lazyImageWatches.size === 0) {
+        if (![...this.lazyImageWatches.values()].some((stop) => stop !== undefined)) {
           this.lazyImageReader = undefined;
           this.releaseLazyImageReader?.();
           this.releaseLazyImageReader = undefined;
@@ -293,7 +278,7 @@ export class ProfilesObserver {
   private update(): void {
     let nextProfiles: Map<string, ProfileResult> | undefined;
     for (const did of this.dids) {
-      const imagesRequested = this.images === 'eager' || this.requestedImageDids.has(did);
+      const imagesRequested = this.images === 'eager' || this.lazyImageWatches.has(did);
       const reader = this.images === 'lazy' && imagesRequested ? this.lazyImageReader : this.reader;
       const snapshot = reader?.getSnapshot(did);
       // Keep already usable text while an explicitly requested image reader

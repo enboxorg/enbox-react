@@ -34,9 +34,3 @@ export function createContextStore<Context>(
   };
   return new ContextViewObserver(opener, { bindingGuard, retainWithoutSubscribers: true });
 }
-
-export function isContextStore<Context>(value: unknown): value is ContextStore<Context> {
-  return value !== null && typeof value === 'object'
-    && 'getSnapshot' in value && typeof value.getSnapshot === 'function'
-    && 'getServerSnapshot' in value && typeof value.getServerSnapshot === 'function';
-}

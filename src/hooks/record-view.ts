@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useMemo } from 'react';
 
 import type {
   BindingGuard,
@@ -8,7 +8,8 @@ import type {
   RecordViewResult,
 } from '../internal/record-view-observer.js';
 import { RecordViewObserver } from '../internal/record-view-observer.js';
-import { isRecordStore, type RecordStore } from '../config/record-store.js';
+import type { RecordStore } from '../config/record-store.js';
+import { useObservableStore } from './observable-store.js';
 
 export type { IdleRecordViewState, RecordViewOpener, RecordViewResult } from '../internal/record-view-observer.js';
 
@@ -16,19 +17,12 @@ export function useRecordViewBinding<Item>(
   opener: RecordViewOpener<Item> | RecordStore<Item> | null,
   bindingGuard?: BindingGuard,
 ): { observer: RecordStore<Item>; snapshot: RecordViewResult<Item> } {
-  const borrowed = isRecordStore<Item>(opener);
   const observer = useMemo(
-    () => borrowed ? opener : new RecordViewObserver(opener, { bindingGuard }),
-    [opener, bindingGuard, borrowed],
+    () => opener === null || typeof opener === 'function'
+      ? new RecordViewObserver(opener, { bindingGuard }) : opener,
+    [opener, bindingGuard],
   );
-  // Supplied stores can use ordinary methods that require their receiver.
-  const subscribe = useCallback((notify: () => void) => observer.subscribe(notify), [observer]);
-  const getSnapshot = useCallback(() => observer.getSnapshot(), [observer]);
-  const getServerSnapshot = useCallback(() => observer.getServerSnapshot(), [observer]);
-  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const retry = useCallback(() => observer.retry(), [observer]);
-  // Borrowed stores own their controls and can enrich snapshots with selection.
-  const snapshot = useMemo(() => borrowed ? state : Object.freeze({ ...state, retry }), [state, retry, borrowed]);
+  const snapshot = useObservableStore(observer, observer.getServerSnapshot());
   return { observer, snapshot };
 }
 

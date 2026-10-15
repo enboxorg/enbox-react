@@ -7,7 +7,7 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { EnboxMutationSnapshot } from '../internal/mutation-observer.js';
 import { EnboxMutationObserver } from '../internal/mutation-observer.js';
 import { sameConnectionBinding, selectConnectionBinding } from '../internal/connection-binding.js';
-import { useConnection } from './connection.js';
+import { useConnectionStore } from './connection.js';
 import { useEnboxClient } from '../provider.js';
 
 export type EnboxMutation<Variables, Result> = (enbox: Enbox, variables: Variables) => Promise<Result>;
@@ -30,7 +30,7 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
   options: EnboxMutationOptions = {},
 ): EnboxMutationResult<Variables, Result> {
   const client = useEnboxClient();
-  const binding = useConnection(selectConnectionBinding, sameConnectionBinding);
+  const binding = useConnectionStore(client, selectConnectionBinding, sameConnectionBinding);
   const observer = useMemo(
     () => new EnboxMutationObserver<Variables>(client, binding),
     [client, binding, options.scope],

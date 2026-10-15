@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { useContextView, useRecords, useRecordView } from '../src/index.js';
 import type { ContextViewResult, RecordViewResult } from '../src/index.js';
@@ -21,33 +21,38 @@ class Controls {
 }
 
 class Records extends Controls {
+  public serverState: RecordViewResult<string> | undefined;
   private readonly state: Extract<RecordViewResult<string>, { status: 'ready' }> = Object.freeze({
     status: 'ready', records: ['saved'], current: true, hasMore: false, isLoadingMore: false,
     retry: () => this.retry(),
   });
 
   public getSnapshot(): RecordViewResult<string> { return this.state; }
-  public getServerSnapshot(): RecordViewResult<string> { return this.state; }
+  public getServerSnapshot(): RecordViewResult<string> { return this.serverState ?? this.state; }
   public async ready(): Promise<typeof this.state> { return this.state; }
 }
 
 class Contexts extends Controls {
+  public serverState: ContextViewResult<string> | undefined;
   private readonly state: Extract<ContextViewResult<string>, { status: 'ready' }> = Object.freeze({
     status: 'ready', contexts: ['shared'], retry: () => this.retry(),
   });
 
   public getSnapshot(): ContextViewResult<string> { return this.state; }
-  public getServerSnapshot(): ContextViewResult<string> { return this.state; }
+  public getServerSnapshot(): ContextViewResult<string> { return this.serverState ?? this.state; }
   public async ready(): Promise<typeof this.state> { return this.state; }
 }
 
 describe('borrowed view method receivers', () => {
   it('preserves ordinary record store methods in SSR, subscriptions, and controls', async () => {
     const store = new Records();
+    store.serverState = Object.freeze({ ...store.getSnapshot(), records: ['server'] });
+    const readLive = vi.spyOn(store, 'getSnapshot');
     function Server() {
       return <p>{useRecordView(store).records.join(',')}</p>;
     }
-    expect(renderToString(<Server />)).toContain('saved');
+    expect(renderToString(<Server />)).toContain('server');
+    expect(readLive).not.toHaveBeenCalled();
     expect(store.listeners.size).toBe(0);
     const hook = renderHook(() => useRecords(store));
     expect(hook.result.current.records).toEqual(['saved']);
@@ -67,10 +72,13 @@ describe('borrowed view method receivers', () => {
 
   it('preserves ordinary context store methods in SSR, subscriptions, and controls', async () => {
     const store = new Contexts();
+    store.serverState = Object.freeze({ ...store.getSnapshot(), contexts: ['server'] });
+    const readLive = vi.spyOn(store, 'getSnapshot');
     function Server() {
       return <p>{useContextView(store).contexts.join(',')}</p>;
     }
-    expect(renderToString(<Server />)).toContain('shared');
+    expect(renderToString(<Server />)).toContain('server');
+    expect(readLive).not.toHaveBeenCalled();
     expect(store.listeners.size).toBe(0);
     const hook = renderHook(() => useContextView(store));
     expect(hook.result.current.contexts).toEqual(['shared']);

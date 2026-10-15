@@ -24,9 +24,7 @@ export class EnboxMutationObserver<Variables = unknown> {
   private readonly _listeners = new Set<() => void>();
   private readonly _pendingInvocations = new Map<number, Variables>();
   private _snapshot: EnboxMutationSnapshot<Variables> = EMPTY;
-  private _active = false;
   private _subscriptionGeneration = 0;
-  private _nextInvocationId = 0;
   private _latestInvocationId = 0;
   private _unsubscribe: (() => void) | undefined;
 
@@ -41,38 +39,30 @@ export class EnboxMutationObserver<Variables = unknown> {
     // Each subscription owns its cleanup, even when callbacks are identical.
     const listener = (): void => { notify(); };
     this._listeners.add(listener);
-    if (this._listeners.size === 1) this.start();
+    if (this._listeners.size === 1) {
+      this._subscriptionGeneration += 1;
+      this._unsubscribe = subscribeToConnectionBinding(this._client, this._binding, () => {
+        if (!this.isCurrent()) this.clear();
+      });
+    }
     return () => {
-      if (!this._listeners.delete(listener)) return;
-      if (this._listeners.size === 0) this.stop();
+      if (!this._listeners.delete(listener) || this._listeners.size !== 0) return;
+      const unsubscribe = this._unsubscribe;
+      this._unsubscribe = undefined;
+      try {
+        unsubscribe?.();
+      } catch (cause: unknown) {
+        reportCleanupError(cause);
+      }
+      this.clear();
     };
   };
-
-  private start(): void {
-    this._active = true;
-    this._subscriptionGeneration += 1;
-    this._unsubscribe = subscribeToConnectionBinding(this._client, this._binding, () => {
-      if (!this.isCurrent()) this.clear();
-    });
-  }
-
-  private stop(): void {
-    this._active = false;
-    const unsubscribe = this._unsubscribe;
-    this._unsubscribe = undefined;
-    try {
-      unsubscribe?.();
-    } catch (cause: unknown) {
-      reportCleanupError(cause);
-    }
-    this.clear();
-  }
 
   /** Clear presentation errors while allowing every issued write to finish. */
   public readonly reset = (): void => {
     if (!this.isCurrent()) return;
     // Older failures cannot restore an error cleared by this reset.
-    this._latestInvocationId = ++this._nextInvocationId;
+    this._latestInvocationId += 1;
     this.publish(undefined);
   };
 
@@ -81,8 +71,7 @@ export class EnboxMutationObserver<Variables = unknown> {
     variables: Input,
   ): Promise<Result> {
     if (!this.isCurrent()) throw new EnboxBindingChangedError();
-    const id = ++this._nextInvocationId;
-    this._latestInvocationId = id;
+    const id = ++this._latestInvocationId;
     const enbox = this._binding.enbox;
     if (enbox === undefined || this._binding.session === undefined) {
       const error = new EnboxNotConnectedError();
@@ -108,7 +97,7 @@ export class EnboxMutationObserver<Variables = unknown> {
     }
   }
 
-  public readonly isCurrent = (): boolean => this._active
+  public readonly isCurrent = (): boolean => this._listeners.size > 0
     && isConnectionBindingCurrent(this._client, this._binding);
 
   private canPublish(generation: number): boolean {

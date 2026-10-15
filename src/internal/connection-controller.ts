@@ -6,6 +6,7 @@ import { isConnectDeniedError } from '@enbox/browser';
 
 import { createWalletConnectHandler } from '../config/client.js';
 import { EnboxBindingChangedError } from '../errors.js';
+import { isConnectionBindingCurrent } from './connection-binding.js';
 import { reportCleanupError, toError } from './errors.js';
 
 type NativeConnectOptions = NonNullable<Parameters<ConnectionStore['connect']>[0]>;
@@ -99,7 +100,6 @@ export class ConnectionController {
   private cancelConnect: ((reason?: Error) => void) | undefined;
   private retainCount = 0;
   private retentionGeneration = 0;
-  private hasBeenRetained = false;
   private retired = false;
 
   public constructor(
@@ -112,7 +112,6 @@ export class ConnectionController {
   /** The provider owns this workflow independently of its hook subscribers. */
   public retain(): () => void {
     if (this.retired) throw new EnboxBindingChangedError();
-    this.hasBeenRetained = true;
     this.retainCount += 1;
     this.retentionGeneration += 1;
     let released = false;
@@ -157,32 +156,27 @@ export class ConnectionController {
     const generation = this.workflowGeneration;
     const repairReason = expected.walletReapprovalRequired === true
       ? walletRepairReason(expected.connection?.state) : undefined;
-    let nativeConnectStarted = false;
     const cancelled = new Promise<void>((resolve, reject) => {
       this.cancelConnect = (reason) => {
-        // Disconnect settles a waiting connect quietly; provider retirement
-        // supplies an error. Neither replaces an already-started native outcome.
-        if (nativeConnectStarted) return;
+        // Disconnect settles a waiting connect quietly; retirement rejects it.
         if (reason === undefined) resolve();
         else reject(reason);
       };
     });
     const operation = Promise.resolve().then(async () => {
-      this.assertWorkflowGeneration(generation);
+      this.assertWorkflowCurrent(generation);
       if (expected.phase === 'initializing') {
         await this.client.initialize();
         // Disconnect can cancel this flow while initialization restores a
         // session. Retired flows must not publish repair state or run guards.
-        this.assertWorkflowGeneration(generation);
+        this.assertWorkflowCurrent(generation);
         expected = this.client.getSnapshot();
         this.update({ repairReason: expected.walletReapprovalRequired === true
           ? walletRepairReason(expected.connection?.state) : undefined });
       }
-      this.assertWorkflowGeneration(generation);
-      this.assertBinding(expected);
+      this.assertWorkflowCurrent(generation, expected);
       await policy.beforeConnect?.({ snapshot: expected, options });
-      this.assertWorkflowGeneration(generation);
-      this.assertBinding(expected);
+      this.assertWorkflowCurrent(generation, expected);
       let nativeOptions: NativeConnectOptions | undefined = options;
       if (options?.wallet !== undefined) {
         if (options.connectHandler !== undefined) throw new TypeError('Choose wallet options or a connectHandler, not both.');
@@ -191,14 +185,15 @@ export class ConnectionController {
         const handler = createWalletConnectHandler({ ...this.walletDefaults, ...wallet });
         nativeOptions = { ...rest, connectHandler: handler };
       }
-      nativeConnectStarted = true;
+      // Once native work starts, cancellation must preserve its original outcome.
+      this.cancelConnect = undefined;
       const result = nativeOptions === undefined ? await this.client.connect() : await this.client.connect(nativeOptions);
       if (result.error !== undefined && result.walletReapprovalRequired !== true && !isConnectDeniedError(result.error)) {
         throw result.error;
       }
     });
     const connectPromise = Promise.race([operation, cancelled]).catch((cause: unknown) => {
-      if (this.isAvailable() && generation === this.workflowGeneration && this.sameBinding(expected)) {
+      if (this.isAvailable() && generation === this.workflowGeneration && isConnectionBindingCurrent(this.client, expected)) {
         this.update({ error: { value: toError(cause), binding: expected } });
       }
       throw cause;
@@ -223,16 +218,14 @@ export class ConnectionController {
     const generation = this.workflowGeneration;
     const expected = this.client.getSnapshot();
     const disconnectPromise = Promise.resolve().then(async () => {
-      this.assertWorkflowGeneration(generation);
-      this.assertBinding(expected);
+      this.assertWorkflowCurrent(generation, expected);
       if (options?.skipBeforeDisconnect !== true) await policy.beforeDisconnect?.(options);
-      this.assertWorkflowGeneration(generation);
-      this.assertBinding(expected);
+      this.assertWorkflowCurrent(generation, expected);
       const { skipBeforeDisconnect: _skip, ...native } = options ?? {};
       const result = options === undefined ? await this.client.disconnect() : await this.client.disconnect(native);
       if (result.error !== undefined) throw result.error;
     }).catch((cause: unknown) => {
-      if (this.isAvailable() && generation === this.workflowGeneration && this.sameBinding(expected)) {
+      if (this.isAvailable() && generation === this.workflowGeneration && isConnectionBindingCurrent(this.client, expected)) {
         this.update({ error: { value: toError(cause), binding: expected } });
       }
       throw cause;
@@ -259,26 +252,20 @@ export class ConnectionController {
     if (result.error !== undefined) throw result.error;
   };
 
-  private sameBinding(expected: ConnectionSnapshot): boolean {
-    const current = this.client.getSnapshot();
-    return current.enbox === expected.enbox && current.session === expected.session
-      && expected.session?.signal.aborted !== true;
-  }
-  private assertBinding(expected: ConnectionSnapshot): void {
-    this.assertAvailable();
-    if (!this.sameBinding(expected)) throw new EnboxBindingChangedError();
-  }
   private isAvailable(): boolean {
     // Standalone controllers need no lease. Once a provider retains one,
     // actions also require a live lease while deferred retirement is pending.
-    return !this.retired && (!this.hasBeenRetained || this.retainCount > 0);
+    return !this.retired && (this.retentionGeneration === 0 || this.retainCount > 0);
   }
   private assertAvailable(): void {
     if (!this.isAvailable()) throw new EnboxBindingChangedError();
   }
-  private assertWorkflowGeneration(generation: number): void {
+  private assertWorkflowCurrent(generation: number, expected?: ConnectionSnapshot): void {
     this.assertAvailable();
-    if (generation !== this.workflowGeneration) throw new EnboxBindingChangedError();
+    if (generation !== this.workflowGeneration
+      || (expected !== undefined && !isConnectionBindingCurrent(this.client, expected))) {
+      throw new EnboxBindingChangedError();
+    }
   }
   private retire(): void {
     if (this.retired) return;

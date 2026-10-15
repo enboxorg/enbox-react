@@ -38,7 +38,7 @@ type SelectionSlot<Item, Selection> = {
 /** A stable owner; native lifetime and pagination remain in RecordViewObserver. */
 export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Item, Selection> {
   private readonly listeners = new Set<() => void>();
-  private readonly closing = new Set<Promise<void>>();
+  private readonly closingObservers = new Set<RecordViewObserver<Item>>();
   private readonly idle: SelectedRecordSnapshot<Item, Selection>;
   private currentSlot: SelectionSlot<Item, Selection>;
   private snapshot: SelectedRecordSnapshot<Item, Selection>;
@@ -115,7 +115,7 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
       this.notify();
       this.listeners.clear();
     }
-    await Promise.all(this.closing);
+    await Promise.all([...this.closingObservers].map((observer) => observer.close().catch(reportCleanupError)));
   };
 
   private readonly onAbort = (): void => { void this.close(); };
@@ -180,12 +180,10 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
     const unsubscribe = slot.unsubscribe;
     delete slot.unsubscribe;
     unsubscribe?.();
-    let finish!: () => void;
-    const closing = new Promise<void>((resolve) => { finish = resolve; });
+    const observer = slot.observer;
     // Native close can reenter owner.close(), which must include this cleanup.
-    this.closing.add(closing);
-    const complete = (): void => { this.closing.delete(closing); finish(); };
-    void slot.observer.close().catch(reportCleanupError).then(complete);
+    this.closingObservers.add(observer);
+    void observer.close().catch(reportCleanupError).then(() => { this.closingObservers.delete(observer); });
   }
 
   private notify(): void {

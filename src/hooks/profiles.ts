@@ -11,29 +11,21 @@ import {
 
 export type { ProfileFieldState, ProfileOptions, ProfileSource, ProfileResult, ResolvedProfile } from '../internal/profiles-observer.js';
 
-function useProfilesObserver(
-  source: ProfileSource | null | undefined,
-  dids: readonly string[],
-  options: ProfileOptions,
-): ProfilesObserver {
-  // A DID set keeps its observer when callers reorder or repeat its entries.
-  const didSetKey = JSON.stringify([...new Set(dids)].sort());
-  const enabled = options.enabled !== false;
-  const images = options.images ?? 'eager';
-  return useMemo(() => new ProfilesObserver(
-    enabled ? source ?? undefined : undefined,
-    JSON.parse(didSetKey) as string[],
-    images,
-  ), [source, didSetKey, enabled, images]);
-}
-
 /** Resolve profiles, native settlement state, and leased image URLs. */
 export function useProfiles(
   source: ProfileSource | null | undefined,
   dids: readonly string[],
   options: ProfileOptions = {},
 ): ReadonlyMap<string, ProfileResult> {
-  const observer = useProfilesObserver(source, dids, options);
+  // A DID set keeps its observer when callers reorder or repeat its entries.
+  const didSetKey = JSON.stringify([...new Set(dids)].sort());
+  const enabled = options.enabled !== false;
+  const images = options.images ?? 'eager';
+  const observer = useMemo(() => new ProfilesObserver(
+    enabled ? source ?? undefined : undefined,
+    JSON.parse(didSetKey) as string[],
+    images,
+  ), [source, didSetKey, enabled, images]);
   return useSyncExternalStore(observer.subscribe, observer.getSnapshot, observer.getServerSnapshot);
 }
 

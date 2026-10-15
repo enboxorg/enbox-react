@@ -10,14 +10,12 @@ export function selectConnectionBinding(snapshot: ConnectionSnapshot): Connectio
   return { enbox: snapshot.enbox, session: snapshot.session };
 }
 
-export function sameConnectionBinding(previous: ConnectionBinding, next: ConnectionBinding): boolean {
+export function sameConnectionBinding(previous: Partial<ConnectionBinding>, next: Partial<ConnectionBinding>): boolean {
   return previous.enbox === next.enbox && previous.session === next.session;
 }
 
-export function isConnectionBindingCurrent(client: ConnectionStore, expected: ConnectionBinding): boolean {
-  const current = client.getSnapshot();
-  return current.enbox === expected.enbox
-    && current.session === expected.session
+export function isConnectionBindingCurrent(client: ConnectionStore, expected: Partial<ConnectionBinding>): boolean {
+  return sameConnectionBinding(client.getSnapshot(), expected)
     && expected.session?.signal.aborted !== true;
 }
 
