@@ -18,19 +18,21 @@ export function useRecordViewBinding<Item>(
 ): { observer: RecordStore<Item>; snapshot: RecordViewResult<Item> } {
   const borrowed = isRecordStore<Item>(opener);
   const observer = useMemo(
-    () => borrowed ? opener : new RecordViewObserver(opener, bindingGuard),
+    () => borrowed ? opener : new RecordViewObserver(opener, { bindingGuard }),
     [opener, bindingGuard, borrowed],
   );
+  // Supplied stores can use ordinary methods that require their receiver.
   const subscribe = useCallback((notify: () => void) => observer.subscribe(notify), [observer]);
   const getSnapshot = useCallback(() => observer.getSnapshot(), [observer]);
   const getServerSnapshot = useCallback(() => observer.getServerSnapshot(), [observer]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const retry = useCallback(() => observer.retry(), [observer]);
+  // Borrowed stores own their controls and can enrich snapshots with selection.
   const snapshot = useMemo(() => borrowed ? state : Object.freeze({ ...state, retry }), [state, retry, borrowed]);
   return { observer, snapshot };
 }
 
-/** Owns a view opened by a memoized callback; null releases the view. */
+/** Own a view from a memoized opener, borrow a supplied store, or disable with null. */
 export function useRecordView<Store extends RecordStore<unknown>>(store: Store): ReturnType<Store['getSnapshot']>;
 export function useRecordView<Item>(opener: RecordViewOpener<Item> | RecordStore<Item> | null): RecordViewResult<Item>;
 export function useRecordView<Item>(opener: RecordViewOpener<Item> | RecordStore<Item> | null): RecordViewResult<Item> {

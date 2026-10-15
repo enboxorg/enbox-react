@@ -2,7 +2,11 @@
 
 import { useMemo, useSyncExternalStore } from 'react';
 import {
-  idleProfileResult, ProfilesObserver, type ProfileOptions, type ProfileSource, type ProfileResult,
+  idleProfileResult,
+  ProfilesObserver,
+  type ProfileOptions,
+  type ProfileSource,
+  type ProfileResult,
 } from '../internal/profiles-observer.js';
 
 export type { ProfileFieldState, ProfileOptions, ProfileSource, ProfileResult, ResolvedProfile } from '../internal/profiles-observer.js';
@@ -12,11 +16,15 @@ function useProfilesObserver(
   dids: readonly string[],
   options: ProfileOptions,
 ): ProfilesObserver {
-  const key = JSON.stringify([...new Set(dids)].sort());
+  // A DID set keeps its observer when callers reorder or repeat its entries.
+  const didSetKey = JSON.stringify([...new Set(dids)].sort());
   const enabled = options.enabled !== false;
   const images = options.images ?? 'eager';
-  return useMemo(() => new ProfilesObserver(enabled ? source ?? undefined : undefined, JSON.parse(key) as string[], images),
-    [source, key, enabled, images]);
+  return useMemo(() => new ProfilesObserver(
+    enabled ? source ?? undefined : undefined,
+    JSON.parse(didSetKey) as string[],
+    images,
+  ), [source, didSetKey, enabled, images]);
 }
 
 /** Resolve profiles, native settlement state, and leased image URLs. */
@@ -30,6 +38,8 @@ export function useProfiles(
 }
 
 const EMPTY_PROFILE = idleProfileResult();
+
+/** Resolve one profile; passing false disables reads. */
 export function useProfile(
   source: ProfileSource | null | undefined,
   did: string | undefined,

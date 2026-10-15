@@ -1,3 +1,4 @@
+/** Normalize arbitrary failures even when their coercion or instanceof check throws. */
 export function toError(cause: unknown): Error {
   try {
     return cause instanceof Error ? cause : new Error(String(cause), { cause });

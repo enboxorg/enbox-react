@@ -6,7 +6,7 @@ import { connected, controlledClient, deferred, facade } from './helpers.js';
 import { ConnectDeniedError } from '@enbox/browser';
 
 describe('dapp connection workflow', () => {
-  it('retires a borrowed provider guard and rejects its captured controls without disposing the client', async () => {
+  it('retires an existing-client provider guard and rejects its captured controls without disposing the client', async () => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();
     const beforeConnect = vi.fn(() => saving.promise);

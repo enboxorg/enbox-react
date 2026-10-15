@@ -18,8 +18,10 @@ describe('record view binding', () => {
       signal = openingSignal;
       return view;
     }, {
-      isCurrent: () => true,
-      subscribe: () => () => { throw failure; },
+      bindingGuard: {
+        isCurrent: () => true,
+        subscribe: () => () => { throw failure; },
+      },
     });
     const stop = subscribeObserver(observer);
     try {
@@ -143,8 +145,10 @@ describe('record view binding', () => {
     const view = new ControlledView(['private']);
     view.onSubscribe = () => { current = false; notifyBinding(); };
     const observer = new RecordViewObserver(async () => view, {
-      isCurrent: () => current,
-      subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      bindingGuard: {
+        isCurrent: () => current,
+        subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      },
     });
     const stop = subscribeObserver(observer);
     try {
@@ -240,8 +244,10 @@ describe('record view binding', () => {
     let notifyBinding = (): void => {};
     const view = new ControlledView(['saved']);
     const observer = new RecordViewObserver(async () => view, {
-      isCurrent: () => current,
-      subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      bindingGuard: {
+        isCurrent: () => current,
+        subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      },
     });
     const stop = subscribeObserver(observer);
     await observer.retry();
@@ -371,8 +377,10 @@ describe('record view binding', () => {
     const view = new ControlledView(['first']);
     view.loadMore.mockImplementation(() => page.promise);
     const observer = new RecordViewObserver(async () => view, {
-      isCurrent: () => current,
-      subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      bindingGuard: {
+        isCurrent: () => current,
+        subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      },
     });
     const stop = subscribeObserver(observer);
     await observer.retry();

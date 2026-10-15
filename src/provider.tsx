@@ -22,39 +22,45 @@ export type EnboxProviderProps = CommonProps & (
   | { config: CreateEnboxClientOptions; client?: never }
 );
 
-/** Owns a configured client, or borrows an explicitly supplied client. */
+/** Creates and disposes a client from config, or reuses a client whose disposal stays with its caller. */
 export function EnboxProvider(props: EnboxProviderProps): ReactNode {
   return props.client !== undefined
-    ? <BorrowedProvider {...props} client={props.client} />
-    : <OwnedProvider {...props} config={props.config} />;
+    ? <ExistingClientProvider {...props} client={props.client} />
+    : <ConfiguredProvider {...props} config={props.config} />;
 }
 
-function initialize(client: ConnectionStore): void {
+function initializeClient(client: ConnectionStore): void {
   void client.initialize().catch((cause: unknown) => {
     console.warn('[@enbox/react] Client initialization failed.', cause);
   });
 }
 
-function BorrowedProvider({ client, initializeOnMount = true, ...props }: CommonProps & { client: ConnectionStore }) {
-  useEffect(() => { if (initializeOnMount) initialize(client); }, [client, initializeOnMount]);
-  return <ClientContext {...props} client={client} />;
+function ExistingClientProvider({
+  client, initializeOnMount = true, ...props
+}: CommonProps & { client: ConnectionStore }) {
+  useEffect(() => { if (initializeOnMount) initializeClient(client); }, [client, initializeOnMount]);
+  return <ConnectionContextProvider {...props} client={client} />;
 }
 
-function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonProps & { config: CreateEnboxClientOptions }) {
-  // Configuration belongs to this mounted application scope. Retained React
-  // state can outlive its Effects, so a retired native client must be replaced.
+function ConfiguredProvider({
+  config, initializeOnMount = true, ...props
+}: CommonProps & { config: CreateEnboxClientOptions }) {
+  // Capture the mounted configuration; changing it requires a new provider key.
+  // Activity can retain this state after Effects have retired its native client.
   const [scope, setScope] = useState(() => ({
     config, client: createEnboxClient(config), generation: 0, retired: false,
   }));
   if (scope.retired) {
     // Updating this component's state during render makes React retry it before
     // rendering children. Creating an inert client is safe in an abandoned render.
-    setScope({ config: scope.config, client: createEnboxClient(scope.config), generation: 0, retired: false });
+    setScope({
+      config: scope.config, client: createEnboxClient(scope.config), generation: 0, retired: false,
+    });
   }
   useEffect(() => {
     const current = scope;
     const generation = ++current.generation;
-    if (initializeOnMount) initialize(current.client);
+    if (initializeOnMount) initializeClient(current.client);
     return () => {
       queueMicrotask(() => {
         if (current.generation !== generation) return;
@@ -68,10 +74,10 @@ function OwnedProvider({ config, initializeOnMount = true, ...props }: CommonPro
       });
     };
   }, [scope, initializeOnMount]);
-  return <ClientContext {...props} client={scope.client} />;
+  return <ConnectionContextProvider {...props} client={scope.client} />;
 }
 
-function ClientContext({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
+function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
   client: ConnectionStore;
 }) {
   const [scope, setScope] = useState(() => ({
@@ -87,6 +93,7 @@ function ClientContext({ client, beforeConnect, beforeDisconnect, children }: Co
     return () => {
       release();
       queueMicrotask(() => {
+        // Check after retain()'s deferred release so Strict Mode replay can reclaim it.
         if (controller.isRetired()) setScope((latest) => latest === scope ? { ...scope } : latest);
       });
     };

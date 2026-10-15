@@ -2,7 +2,8 @@ import type { ExpandableRecordView, RecordView, RecordViewState } from '@enbox/b
 
 import { EnboxBindingChangedError } from '../errors.js';
 import { toError } from './errors.js';
-import { OwnedViewObserver, type BindingGuard, type ViewAttempt } from './owned-view-observer.js';
+import type { OwnedViewOptions, ViewAttempt } from './owned-view-observer.js';
+import { OwnedViewObserver } from './owned-view-observer.js';
 
 export type { BindingGuard } from './owned-view-observer.js';
 export type RecordViewOpener<Item> = (signal: AbortSignal) => Promise<RecordView<Item>>;
@@ -16,10 +17,12 @@ export type IdleRecordViewState<Item> = Readonly<{
 }>;
 
 export type RecordViewResult<Item> = (RecordViewState<Item> | IdleRecordViewState<Item>) & Readonly<{
-  /** Reopens the selection. Opening failures reject and are published in state. */
+  /** Reopens an active selection; attachment does not wait for local readiness. */
   retry: () => Promise<void>;
   isLoadingMore: boolean;
 }>;
+
+type RecordViewObserverOptions = OwnedViewOptions & Readonly<{ loadAll?: boolean }>;
 
 const EMPTY_RECORDS = Object.freeze([]);
 const IDLE = Object.freeze({
@@ -35,29 +38,31 @@ export class RecordViewObserver<Item> extends OwnedViewObserver<
 > {
   private readonly _pagination: WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>;
   private readonly _expanding = new WeakSet<ViewAttempt<RecordView<Item>>>();
+  private readonly _loadAll: boolean;
 
-  public constructor(opener: RecordViewOpener<Item> | null, bindingGuard?: BindingGuard, keepAlive = false,
-    private readonly _loadAll = false) {
+  public constructor(opener: RecordViewOpener<Item> | null, options: RecordViewObserverOptions = {}) {
     const pagination = new WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>();
     super(opener, {
       idle: IDLE,
       loading: LOADING,
-      error: (error) => ({ status: 'error', records: EMPTY_RECORDS, hasMore: false, current: false, error }),
-      result: (state, retry, attempt) => Object.freeze({
+      createErrorState: (error) => ({ status: 'error', records: EMPTY_RECORDS, hasMore: false, current: false, error }),
+      createSnapshot: (state, retry, attempt) => Object.freeze({
         ...state, retry, isLoadingMore: attempt !== undefined && pagination.has(attempt),
       }),
-      sameResult: (previous, next) => previous.isLoadingMore === next.isLoadingMore,
-    }, bindingGuard, keepAlive);
+      sameControls: (previous, next) => previous.isLoadingMore === next.isLoadingMore,
+    }, options);
     this._pagination = pagination;
+    this._loadAll = options.loadAll ?? false;
   }
 
   /** A display-only update; the next native publication replaces it. */
   public readonly updateRecords = (update: (records: readonly Item[]) => readonly Item[]): void => {
     const attempt = this._attempt;
     if (this.getSnapshot().status === 'idle') throw new EnboxBindingChangedError();
-    const state = this._viewState;
+    const state = this._state;
     const records = update(state.records);
-    if (this.getSnapshot().status === 'idle' || this._attempt !== attempt || this._viewState !== state) {
+    // An application updater can synchronously replace the selection.
+    if (this.getSnapshot().status === 'idle' || this._attempt !== attempt || this._state !== state) {
       throw new EnboxBindingChangedError();
     }
     if (records !== state.records) this.publish({ ...state, records: Object.freeze([...records]) });
@@ -67,21 +72,21 @@ export class RecordViewObserver<Item> extends OwnedViewObserver<
     super.publish(state);
     const attempt = this._attempt;
     if (!this._loadAll || attempt === undefined || !this.isCurrent(attempt)
-      || this._viewState.status !== 'ready' || !this._viewState.hasMore || this._expanding.has(attempt)) return;
+      || this._state.status !== 'ready' || !this._state.hasMore || this._expanding.has(attempt)) return;
     this._expanding.add(attempt);
     void Promise.resolve().then(async () => {
-      while (this.isCurrent(attempt) && this._viewState.status === 'ready' && this._viewState.hasMore) {
+      while (this.isCurrent(attempt) && this._state.status === 'ready' && this._state.hasMore) {
         await this.loadMore();
       }
     }).catch((cause: unknown) => {
-      if (this.isCurrent(attempt) && this._viewState.status !== 'error') {
-        this.publish({ status: 'error', records: this._viewState.records,
-          hasMore: this._viewState.hasMore, current: false, error: toError(cause) });
+      if (this.isCurrent(attempt) && this._state.status !== 'error') {
+        this.publish({ status: 'error', records: this._state.records,
+          hasMore: this._state.hasMore, current: false, error: toError(cause) });
       }
     }).finally(() => {
       this._expanding.delete(attempt);
-      if (this.isCurrent(attempt) && this._viewState.status === 'ready' && this._viewState.hasMore) {
-        this.publish(this._viewState);
+      if (this.isCurrent(attempt) && this._state.status === 'ready' && this._state.hasMore) {
+        this.publish(this._state);
       }
     });
   }
@@ -103,7 +108,7 @@ export class RecordViewObserver<Item> extends OwnedViewObserver<
     }).catch((cause: unknown) => {
       if (this.isCurrent(attempt)) {
         this.publish({
-          status: 'error', records: this._viewState.records, hasMore: this._viewState.hasMore,
+          status: 'error', records: this._state.records, hasMore: this._state.hasMore,
           current: false, error: toError(cause),
         });
       }
@@ -111,11 +116,12 @@ export class RecordViewObserver<Item> extends OwnedViewObserver<
     }).finally(() => {
       if (this.isCurrent(attempt)) {
         this._pagination.delete(attempt);
-        this.publish(this._viewState);
+        this.publish(this._state);
       }
     });
     this._pagination.set(attempt, pagination);
-    this.publish(this._viewState);
+    // Publish only after storing the Promise so reentrant callers join it.
+    this.publish(this._state);
     return pagination;
   };
 

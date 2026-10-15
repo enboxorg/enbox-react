@@ -1,6 +1,6 @@
 import type { ConnectionSnapshot, ConnectionStore } from '@enbox/browser';
 
-/** The exact facade and authorization session published by a connection. */
+/** Captured facade/session references; the same DID can acquire replacement objects. */
 export type ConnectionBinding = Readonly<{
   enbox: ConnectionSnapshot['enbox'];
   session: ConnectionSnapshot['session'];
@@ -21,6 +21,7 @@ export function isConnectionBindingCurrent(client: ConnectionStore, expected: Co
     && expected.session?.signal.aborted !== true;
 }
 
+/** Session abort can precede the store publishing its replacement snapshot. */
 export function subscribeToConnectionBinding(
   client: ConnectionStore,
   expected: ConnectionBinding,

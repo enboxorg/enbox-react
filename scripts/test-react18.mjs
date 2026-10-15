@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const definition = join(root, 'tests/compatibility/react18');
-const fixture = join(root, '.artifacts/react18');
-const generated = join(fixture, 'generated');
+const template = join(root, 'tests/compatibility/react18');
+const consumer = join(root, '.artifacts/react18');
+const generated = join(consumer, 'generated');
 const archive = join(root, '.artifacts/enbox-react.tgz');
 
 mkdirSync(join(root, '.artifacts'), { recursive: true });
@@ -36,15 +36,15 @@ rmSync(generated, { recursive: true, force: true });
 mkdirSync(join(generated, 'tests'), { recursive: true });
 mkdirSync(join(generated, 'type-tests'), { recursive: true });
 
-const manifest = JSON.parse(readFileSync(join(definition, 'package.json'), 'utf8'));
+const manifest = JSON.parse(readFileSync(join(template, 'package.json'), 'utf8'));
 manifest.dependencies['@enbox/react'] = `file:../${archiveName}`;
-writeFileSync(join(fixture, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
-const compiler = JSON.parse(readFileSync(join(definition, 'tsconfig.json'), 'utf8'));
-compiler.extends = '../../tsconfig.json';
-writeFileSync(join(fixture, 'tsconfig.json'), JSON.stringify(compiler, null, 2) + '\n');
-for (const file of ['bunfig.toml', 'vitest.config.ts']) cpSync(join(definition, file), join(fixture, file));
+writeFileSync(join(consumer, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
+const tsconfig = JSON.parse(readFileSync(join(template, 'tsconfig.json'), 'utf8'));
+tsconfig.extends = '../../tsconfig.json';
+writeFileSync(join(consumer, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2) + '\n');
+for (const file of ['bunfig.toml', 'vitest.config.ts']) cpSync(join(template, file), join(consumer, file));
 
-const lock = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(definition, 'bun.lock'), 'utf8'));
+const lock = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(template, 'bun.lock'), 'utf8'));
 if (lock.error) throw new Error('The React 18 fixture lockfile is invalid.');
 const sdk = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const localPackage = lock.config.packages['@enbox/react'];
@@ -55,7 +55,7 @@ localPackage[0] = `@enbox/react@../${archiveName}`;
 // The code under test changes; only its archive checksum is refreshed. Every
 // registry dependency and integrity remains pinned by the committed lockfile.
 localPackage[2] = `sha512-${createHash('sha512').update(packed).digest('base64')}`;
-writeFileSync(join(fixture, 'bun.lock'), JSON.stringify(lock.config, null, 2) + '\n');
+writeFileSync(join(consumer, 'bun.lock'), JSON.stringify(lock.config, null, 2) + '\n');
 
 for (const entry of readdirSync(join(root, 'tests'), { withFileTypes: true })) {
   if (!entry.isFile() || !/\.(ts|tsx)$/.test(entry.name) || entry.name === 'activity.spec.tsx') continue;
@@ -77,5 +77,5 @@ import { version } from 'react';
 import { expect, it } from 'vitest';
 it('runs against React 18.3.1', () => { expect(version).toBe('18.3.1'); });
 `);
-execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: fixture, stdio: 'inherit' });
-execFileSync('bun', ['run', 'check'], { cwd: fixture, stdio: 'inherit' });
+execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: consumer, stdio: 'inherit' });
+execFileSync('bun', ['run', 'check'], { cwd: consumer, stdio: 'inherit' });

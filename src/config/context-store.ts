@@ -6,26 +6,33 @@ export type ContextStore<Context> = Readonly<{
   getSnapshot(): ContextViewResult<Context>;
   getServerSnapshot(): ContextViewResult<Context>;
   subscribe(notify: () => void): () => void;
+  /** Wait for usable contexts; cancelling this wait does not retire the catalog. */
   ready(options?: { signal?: AbortSignal }): Promise<Extract<ContextViewResult<Context>, { status: 'ready' }>>;
+  /** Reopen an active catalog; resolves when its native view attaches. */
   retry(): Promise<void>;
+  /** Close permanently and wait for views already acquired to finish closing. */
   close(): Promise<void>;
 }>;
 
-export type ContextStoreOptions = { signal?: AbortSignal };
+export type ContextStoreOptions = {
+  /** Owner lifetime; abort releases the view and invalidates retained controls. */
+  signal?: AbortSignal;
+};
 
-/** Inert until observed; keeps its catalog until close() or the owner signal aborts. */
+/** Subscription or ready() opens the catalog; it stays open until close() or abort. */
 export function createContextStore<Context>(
   opener: ContextViewOpener<Context> | null,
   options: ContextStoreOptions = {},
 ): ContextStore<Context> {
   const signal = options.signal;
-  return new ContextViewObserver(opener, signal === undefined ? undefined : {
+  const bindingGuard = signal === undefined ? undefined : {
     isCurrent: () => !signal.aborted,
-    subscribe: (notify) => {
+    subscribe: (notify: () => void) => {
       signal.addEventListener('abort', notify, { once: true });
       return () => signal.removeEventListener('abort', notify);
     },
-  }, true);
+  };
+  return new ContextViewObserver(opener, { bindingGuard, retainWithoutSubscribers: true });
 }
 
 export function isContextStore<Context>(value: unknown): value is ContextStore<Context> {

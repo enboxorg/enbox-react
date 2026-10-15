@@ -262,8 +262,10 @@ describe('owned context views', () => {
     const view = new ControlledContextView(['private']);
     view.onSubscribe = () => { current = false; notifyBinding(); };
     const observer = new ContextViewObserver(async () => view, {
-      isCurrent: () => current,
-      subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      bindingGuard: {
+        isCurrent: () => current,
+        subscribe: (notify) => { notifyBinding = notify; return () => {}; },
+      },
     });
     const stop = subscribeObserver(observer);
     await observer.retry();
@@ -309,7 +311,9 @@ describe('owned context views', () => {
     if (mode === 'synchronous') view.close.mockImplementation(() => { throw closeFailure; });
     else view.close.mockRejectedValue(closeFailure);
     const observer = new ContextViewObserver(async (openingSignal) => { signal = openingSignal; return view; }, {
-      isCurrent: () => true, subscribe: () => () => { throw bindingFailure; },
+      bindingGuard: {
+        isCurrent: () => true, subscribe: () => () => { throw bindingFailure; },
+      },
     });
     const stop = subscribeObserver(observer);
     try {

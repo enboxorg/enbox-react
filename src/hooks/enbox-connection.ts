@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import type {
-  ConnectOptions, DisconnectOptions, EnboxConnectionState,
+  ConnectionController, ConnectOptions, DisconnectOptions, EnboxConnectionState,
 } from '../internal/connection-controller.js';
 import { useProviderContext } from '../provider.js';
 
@@ -15,11 +15,11 @@ export type {
 export type EnboxConnection = EnboxConnectionState & Readonly<{
   connect(options?: ConnectOptions): Promise<void>;
   disconnect(options?: DisconnectOptions): Promise<void>;
-  refreshDwnEndpoints: import('../internal/connection-controller.js').ConnectionController['refreshDwnEndpoints'];
-  retryRemote: import('../internal/connection-controller.js').ConnectionController['retryRemote'];
+  refreshDwnEndpoints: ConnectionController['refreshDwnEndpoints'];
+  retryRemote: ConnectionController['retryRemote'];
 }>;
 
-/** Connection presentation, async guards, and wallet repair for a dapp. */
+/** Connection presentation and guarded actions that reject actionable failures. */
 export function useEnboxConnection(): EnboxConnection {
   const { controller, beforeConnect, beforeDisconnect } = useProviderContext();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getServerSnapshot);

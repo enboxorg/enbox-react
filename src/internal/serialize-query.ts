@@ -16,7 +16,7 @@ function readDataProperty(descriptor: PropertyDescriptor): unknown {
   return descriptor.value;
 }
 
-/** Copy selected own option values before render can evaluate their accessors. */
+/** Copy selected own data values without invoking option getters during render. */
 export function selectQueryProperties<Source extends object, Key extends keyof Source & string>(
   input: Source,
   keys: readonly Key[],
@@ -33,7 +33,8 @@ export function selectQueryProperties<Source extends object, Key extends keyof S
 
 /** Serializes query data deterministically without evaluating accessors. */
 export function serializeQuery(value: unknown): string {
-  const visiting = new Set<object>();
+  // Track ancestors, rather than all seen objects, to allow shared acyclic values.
+  const ancestors = new Set<object>();
 
   function readProperty(input: object, key: string): unknown {
     const descriptor = Object.getOwnPropertyDescriptor(input, key);
@@ -44,11 +45,11 @@ export function serializeQuery(value: unknown): string {
   function normalize(input: unknown): unknown {
     if (input === null || typeof input === 'string' || typeof input === 'boolean') return input;
     if (typeof input === 'number' && Number.isFinite(input)) return input;
-    if (typeof input !== 'object' || input === null) {
+    if (typeof input !== 'object') {
       throw new TypeError('Record queries support plain JSON values and finite numbers.');
     }
-    if (visiting.has(input)) throw new TypeError('Record queries cannot contain cycles.');
-    visiting.add(input);
+    if (ancestors.has(input)) throw new TypeError('Record queries cannot contain cycles.');
+    ancestors.add(input);
     try {
       assertNoSymbols(input);
       if (Array.isArray(input)) {
@@ -66,7 +67,7 @@ export function serializeQuery(value: unknown): string {
       }
       return Object.fromEntries(entries);
     } finally {
-      visiting.delete(input);
+      ancestors.delete(input);
     }
   }
   return JSON.stringify(normalize(value));

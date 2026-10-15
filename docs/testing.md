@@ -76,7 +76,7 @@ Mutation tests cover caller guards after session replacement.
 
 Connection workflows cover shared guard progress, preserving a session on a
 failed drain, cancellation before approval, and replacement identity checks.
-Owned-provider tests cover Strict Mode disposal and Activity recreation.
+Configured-provider tests cover Strict Mode disposal and Activity recreation.
 Profile tests cover native reader sharing, Blob lease reuse, late settlement,
 source replacement, disabled reads, and callbacks from retired watch generations.
 

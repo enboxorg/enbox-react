@@ -15,19 +15,21 @@ replication run in `@enbox/browser`.
 `src/internal` contains subscription and asynchronous-operation state. Only
 exports listed in `src/index.ts` and `src/config/index.ts` are public.
 
-## Resource ownership
+## Client and view lifetimes
 
-`EnboxProvider config={options}` owns one native client for its mounted
-scope. Construction is inert; initialization happens after mount. Disposal
+`EnboxProvider config={options}` creates one native client for its mounted
+scope. The internal `ConfiguredProvider` manages its initialization and disposal.
+Construction is inert; initialization happens after mount. Disposal
 is deferred past Strict Mode replay. Retained UI can resume Effects after
 retirement, so the provider replaces a disposed client before initializing
 the resumed scope. Configuration is fixed for that scope.
 
-`EnboxProvider client={store}` borrows an application-owned store and calls
-its idempotent `initialize()` after mount unless `initializeOnMount` is false.
+`EnboxProvider client={store}` uses an existing client through the internal
+`ExistingClientProvider`. It calls the client's idempotent `initialize()` after
+mount unless `initializeOnMount` is false.
 Initialization restores a session; wallet approval starts through an action.
 
-The borrowed form does not dispose the store. The application calls
+The application manages the existing client's lifetime and calls
 `client.dispose()` when retiring it, or `disconnect()` to sign out. Hook
 subscriptions are released when their consumers unmount or React deactivates
 those consumers.
@@ -42,7 +44,7 @@ view, and consumer unsubscription does not retire it. Supplied stores carry
 their own scope and need no provider.
 
 `useContextView` and `createContextStore` apply the same ownership rules to
-native context catalogs. Both adapters share the internal owned-view observer;
+native context catalogs. Both adapters share the internal view observer;
 record pagination stays in the record adapter. Context results preserve the
 native `contexts` state without adding record-only freshness or pagination.
 
@@ -58,8 +60,8 @@ guard. Raw snapshot hooks retain their native contracts.
 ## Profile resources
 
 Profile observers are inert during render. Their first subscription retains a
-shared native reader for the source and image policy and watches the selected DIDs. Each
-result exposes resolved display fields and native status/failure metadata.
+shared native reader for the source and image policy and watches the selected
+DIDs. Each result exposes resolved display fields and native status/failure metadata.
 Observers select eager, lazy, or off image policy. Native off readers serve
 text-only and unrequested lazy consumers. Native eager readers serve eager
 consumers and explicitly requested lazy DIDs. Separating these pools prevents
@@ -68,8 +70,8 @@ lookup. Requests coalesce within each pool. Lazy activation may read the root
 again; already usable text is retained while it settles. Text-only observers
 acquire no image leases and their image fields stay idle. Aggregate status and
 field metadata describe the reader selected for that DID.
-Image leases
-are reused by Blob identity and released with a grace period for DOM consumers.
+Image leases are reused by Blob identity and released with a grace period for
+DOM consumers.
 The last observer releases the reader after Strict Mode replay. A retained
 observer can reacquire a reader after retirement; callbacks from earlier watch
 generations cannot publish into the resumed observer.
@@ -159,9 +161,9 @@ SDK validates the query. Nested paths require an exact `within` context ID.
 Without materialization, rows are native typed record handles. With
 `materialize: true`, rows contain the handle and decoded value. Object
 materialization preserves the SDK's selected direct singleton children and
-infers each child's codec. Singleton eligibility derives from the native
-`set` contract. Codecs provide
-TypeScript inference; a codec validator provides runtime payload validation.
+infers each child's codec. Singleton eligibility derives from the native `set`
+contract. Codecs provide TypeScript inference; a codec validator provides
+runtime payload validation.
 
 ## Mutations
 
@@ -184,9 +186,10 @@ the invocation's Promise preserves the original rejection.
 Issued writes can complete after replacement or unmount. Application code
 must guard its own work after `await`, including draft clearing or navigation,
 against changes to the session, selected context, and component lifetime.
-The captured mutation's `isCurrent()` checks its active connection binding
-before those UI effects. It does not validate an application's selected record
-or draft version.
+The captured mutation's `isCurrent()` checks that its observer and connection
+binding are currently active before those UI effects. An explicit `{ scope: pageId }`
+retires captured controls when the scope changes. Draft versions and other
+application state still need application checks.
 
 ## Server rendering and browser startup
 

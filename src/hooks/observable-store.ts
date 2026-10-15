@@ -4,8 +4,9 @@ import { useCallback } from 'react';
 import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
 
 const noop = (): void => {};
-const ABSENT = Symbol('absent observable store');
-const getServerSnapshot = (): typeof ABSENT => ABSENT;
+// Undefined may be a real snapshot. A separate sentinel also avoids server reads.
+const NO_SNAPSHOT = Symbol('absent observable store');
+const getServerSnapshot = (): typeof NO_SNAPSHOT => NO_SNAPSHOT;
 
 /** A cached snapshot with change notifications; payloads are not required. */
 export type ObservableStoreSource<Snapshot> = Readonly<{
@@ -18,7 +19,7 @@ export function useObservableStore<Snapshot>(
   store: ObservableStoreSource<Snapshot> | null | undefined,
   fallback: Snapshot,
 ): Snapshot;
-/** Selects actual snapshots; absent sources and server rendering return the selected fallback. */
+/** Absent sources and server rendering return fallback without invoking selector. */
 export function useObservableStore<Snapshot, Selection>(
   store: ObservableStoreSource<Snapshot> | null | undefined,
   fallback: NoInfer<Selection>,
@@ -32,8 +33,10 @@ export function useObservableStore<Snapshot, Selection = Snapshot>(
   isEqual: (previous: Selection, next: Selection) => boolean = Object.is,
 ): Selection {
   const subscribe = useCallback((notify: () => void) => store?.subscribe(notify) ?? noop, [store]);
-  const getSnapshot = useCallback(() => store == null ? ABSENT : store.getSnapshot(), [store]);
-  const select = useCallback((snapshot: Snapshot | typeof ABSENT): Selection => snapshot === ABSENT
-    ? fallback : selector === undefined ? snapshot as unknown as Selection : selector(snapshot), [fallback, selector]);
+  const getSnapshot = useCallback(() => store == null ? NO_SNAPSHOT : store.getSnapshot(), [store]);
+  const select = useCallback((snapshot: Snapshot | typeof NO_SNAPSHOT): Selection => {
+    if (snapshot === NO_SNAPSHOT) return fallback;
+    return selector === undefined ? snapshot as unknown as Selection : selector(snapshot);
+  }, [fallback, selector]);
   return useSyncExternalStoreWithSelector(subscribe, getSnapshot, getServerSnapshot, select, isEqual);
 }

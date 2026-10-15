@@ -5,27 +5,29 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import './style.css';
 
+/** Wait for this app's worker to control the page before initializing Enbox. */
 async function prepareBrowser(): Promise<void> {
   if (!('serviceWorker' in navigator)) throw new Error('This browser needs service worker support.');
   const workerPath = `${import.meta.env.BASE_URL}${import.meta.env.DEV ? 'dev-sw.js?dev-sw' : 'sw.js'}`;
   const workerUrl = new URL(workerPath, window.location.href).href;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let ended = false;
+  let finished = false;
   let stopListening = (): void => {};
   try {
     await Promise.race([
       (async () => {
         await navigator.serviceWorker.register(workerUrl, { type: 'module' });
-        if (ended) throw new Error('Service worker startup wait ended.');
+        if (finished) throw new Error('Service worker startup wait ended.');
         await navigator.serviceWorker.ready;
-        if (ended) throw new Error('Service worker startup wait ended.');
+        if (finished) throw new Error('Service worker startup wait ended.');
+        // A ready registration does not guarantee that our worker controls this page.
         await new Promise<void>((resolve) => {
-          const check = (): void => {
+          const resolveWhenControlled = (): void => {
             if (navigator.serviceWorker.controller?.scriptURL === workerUrl) resolve();
           };
-          navigator.serviceWorker.addEventListener('controllerchange', check);
-          stopListening = () => navigator.serviceWorker.removeEventListener('controllerchange', check);
-          check();
+          navigator.serviceWorker.addEventListener('controllerchange', resolveWhenControlled);
+          stopListening = () => navigator.serviceWorker.removeEventListener('controllerchange', resolveWhenControlled);
+          resolveWhenControlled();
         });
       })(),
       new Promise<never>((_resolve, reject) => {
@@ -34,7 +36,7 @@ async function prepareBrowser(): Promise<void> {
     ]);
     activatePolyfills({ serviceWorker: false });
   } finally {
-    ended = true;
+    finished = true;
     clearTimeout(timer);
     stopListening();
   }

@@ -31,8 +31,9 @@ version changes are documented in
 client factory. It has no React client directive.
 
 ```ts
+import type { CreateEnboxClientOptions } from '@enbox/react/config';
+
 import {
-  createEnboxClient,
   defineApplicationManifest,
   defineProtocol,
   recordCodecs,
@@ -50,7 +51,7 @@ export const NotesProtocol = defineProtocol({
 export const config = {
   application: defineApplicationManifest({ protocols: [NotesProtocol] }),
   wallet: { appName: 'My notes', appIcon: '/icon.svg' },
-} satisfies Parameters<typeof createEnboxClient>[0];
+} satisfies CreateEnboxClientOptions;
 ```
 
 Protocol identifiers should be stable URLs owned by your application.
@@ -83,9 +84,21 @@ Configuration is fixed for the mounted scope; use a new provider key to
 change it. Strict Mode replay keeps the live client. Effect reactivation
 after Activity retirement creates a fresh client and restores its session.
 
-Use `client={createEnboxClient(config)}` when the application already owns
-one stable client. That form borrows its lifetime; the host calls
-`client.dispose()` when retiring it. `disconnect()` signs out.
+If controllers outside React already use a client, pass that same instance
+with `client={client}`. In a browser-only app, create it once outside rendering:
+
+```tsx
+import { createEnboxClient } from '@enbox/react/config';
+
+const client = createEnboxClient(config);
+
+export function App() {
+  return <EnboxProvider client={client}><Notes /></EnboxProvider>;
+}
+```
+
+With an existing client, the application calls `client.dispose()` when retiring
+it. Both provider forms initialize by default. `disconnect()` signs out.
 `initializeOnMount={false}` lets a host finish worker bootstrap before calling
 `client.initialize()` itself.
 
@@ -114,7 +127,7 @@ and actions that reject actionable failures while treating denial quietly.
 Native `useConnection` and `useConnectionActions` remain available for raw
 snapshot outcomes. A per-call `connect({ wallet: options })` inherits the
 client factory's wallet defaults while changing the wallet route, for both
-owned and borrowed providers. Explicit per-call fields override those defaults.
+configured and existing clients. Explicit per-call fields override those defaults.
 For a native store created outside `createEnboxClient`, supply the app identity
 in the per-call wallet options.
 

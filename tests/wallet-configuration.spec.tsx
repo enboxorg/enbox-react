@@ -33,10 +33,10 @@ function captureApproval(client: ConnectionStore): void {
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe('provider wallet configuration', () => {
-  it.each(['borrowed', 'owned'] as const)('retains the %s client factory identity when choosing a wallet', async (ownership) => {
+  it.each(['existing', 'configured'] as const)('retains the %s client factory identity when choosing a wallet', async (provider) => {
     const wallet = { appName: 'Original notes', appIcon: '/original.svg', applicationId: 'notes-id' };
     const config = { application, wallet };
-    const supplied = ownership === 'borrowed' ? createEnboxClient(config) : undefined;
+    const supplied = provider === 'existing' ? createEnboxClient(config) : undefined;
     const hook = renderHook(() => ({ client: useEnboxClient(), connection: useEnboxConnection() }), {
       wrapper: ({ children }) => supplied === undefined
         ? <EnboxProvider config={config} initializeOnMount={false}>{children}</EnboxProvider>
