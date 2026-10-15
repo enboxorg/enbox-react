@@ -22,7 +22,7 @@ const LOADING = Object.freeze({ status: 'loading' as const, contexts: EMPTY_CONT
 
 /** Native context state using the same ownership lifecycle as record views. */
 export class ContextViewObserver<Context> extends OwnedViewObserver<
-  ContextViewState<Context>, IdleContextViewState<Context>, ContextViewResult<Context>, ContextView<Context>
+  ContextViewState<Context>, IdleContextViewState<Context>, ContextViewResult<Context>
 > {
   public constructor(opener: ContextViewOpener<Context> | null, options: OwnedViewOptions = {}) {
     super(opener, {

@@ -98,17 +98,7 @@ export function useRecords<
   Codecs extends TypedProtocol['codecs'],
   RoleGroups extends ContextRoleGroups,
   const Path extends ProtocolPaths<Definition> & string,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  options: (RecordsOptions<Definition, NoInfer<Path>> & { materialize: true }) | null,
-): RecordsResult<TypedMaterializedRecord<DataForPath<Codecs, Path>>>;
-export function useRecords<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  const Path extends ProtocolPaths<Definition> & string,
-  const Materialization extends RecordMaterialization<Definition, NoInfer<Path>> | undefined,
+  const Materialization extends RecordMaterialization<Definition, NoInfer<Path>> | undefined = true,
 >(
   protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
   path: Path,

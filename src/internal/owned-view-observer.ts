@@ -1,3 +1,5 @@
+import type { ObservableStore } from '@enbox/browser';
+
 import { EnboxBindingChangedError } from '../errors.js';
 import { reportCleanupError, toError } from './errors.js';
 
@@ -8,6 +10,7 @@ export type BindingGuard = {
 
 export type OwnedViewOptions = Readonly<{
   bindingGuard?: BindingGuard | undefined;
+  ownerSignal?: AbortSignal | undefined;
   retainWithoutSubscribers?: boolean;
 }>;
 
@@ -17,25 +20,23 @@ type ViewState = Readonly<
 >;
 type IdleState = Readonly<{ status: 'idle'; error?: never }>;
 
-type ObservableView<State> = {
-  getSnapshot(): State;
-  subscribe(notify: (state: State) => void): () => void;
+export type CloseableView<State> = ObservableStore<State> & {
   close(): Promise<void>;
 };
 
-export type ViewAttempt<View> = {
+export type ViewAttempt<State> = {
   readonly abortController: AbortController;
   /** For current attempts, resolves after attachment rather than local readiness. */
   readonly opening: Promise<void>;
-  view: View | undefined;
+  view: CloseableView<State> | undefined;
   unsubscribe: (() => void) | undefined;
 };
 
-type ViewPresentation<State, Idle, Result, View> = {
+type ViewPresentation<State, Idle, Result> = {
   idle: Idle;
   loading: State;
   createErrorState(error: Error): State;
-  createSnapshot(state: State | Idle, retry: () => Promise<void>, attempt: ViewAttempt<View> | undefined): Result;
+  createSnapshot(state: State | Idle, retry: () => Promise<void>, attempt: ViewAttempt<State> | undefined): Result;
   sameControls?(previous: Result, next: Result): boolean;
 };
 
@@ -44,14 +45,13 @@ export class OwnedViewObserver<
   State extends ViewState,
   Idle extends IdleState,
   Result extends (State | Idle) & Readonly<{ retry: () => Promise<void> }>,
-  View extends ObservableView<State>,
 > {
   private readonly _listeners = new Set<() => void>();
   private readonly _idleSnapshot: Result;
   private readonly _loadingSnapshot: Result;
   private _snapshot: Result;
   protected _state: State | Idle;
-  protected _attempt: ViewAttempt<View> | undefined;
+  protected _attempt: ViewAttempt<State> | undefined;
   private _active = false;
   private _closed = false;
   private _attemptGeneration = 0;
@@ -61,11 +61,18 @@ export class OwnedViewObserver<
   private readonly _retainWithoutSubscribers: boolean;
 
   public constructor(
-    private readonly _openView: ((signal: AbortSignal) => Promise<View>) | null,
-    private readonly _presentation: ViewPresentation<State, Idle, Result, View>,
+    private readonly _openView: ((signal: AbortSignal) => Promise<CloseableView<State>>) | null,
+    private readonly _presentation: ViewPresentation<State, Idle, Result>,
     options: OwnedViewOptions = {},
   ) {
-    this._bindingGuard = options.bindingGuard;
+    const ownerSignal = options.ownerSignal;
+    this._bindingGuard = ownerSignal === undefined ? options.bindingGuard : {
+      isCurrent: () => !ownerSignal.aborted,
+      subscribe: (notify: () => void) => {
+        ownerSignal.addEventListener('abort', notify, { once: true });
+        return () => ownerSignal.removeEventListener('abort', notify);
+      },
+    };
     this._retainWithoutSubscribers = options.retainWithoutSubscribers ?? false;
     this._idleSnapshot = this.createSnapshot(_presentation.idle);
     this._loadingSnapshot = this.createSnapshot(_presentation.loading);
@@ -140,7 +147,7 @@ export class OwnedViewObserver<
     return this._bindingGuard?.isCurrent() ?? true;
   }
 
-  protected isCurrent(attempt: ViewAttempt<View>): boolean {
+  protected isCurrent(attempt: ViewAttempt<State>): boolean {
     return this._active && this._attempt === attempt
       && !attempt.abortController.signal.aborted && this.isBindingCurrent();
   }
@@ -184,7 +191,7 @@ export class OwnedViewObserver<
 
   private beginOpening(): Promise<void> {
     const previous = this._attempt;
-    const attempt: ViewAttempt<View> = {
+    const attempt: ViewAttempt<State> = {
       abortController: new AbortController(),
       opening: Promise.resolve().then(() => this.attachView(attempt)),
       view: undefined,
@@ -198,7 +205,7 @@ export class OwnedViewObserver<
     return attempt.opening;
   }
 
-  private async attachView(attempt: ViewAttempt<View>): Promise<void> {
+  private async attachView(attempt: ViewAttempt<State>): Promise<void> {
     try {
       if (!this.isCurrent(attempt) || this._openView === null) return;
       const view = await this._openView(attempt.abortController.signal);
@@ -239,7 +246,7 @@ export class OwnedViewObserver<
     return generation;
   }
 
-  private releaseAttempt(attempt: ViewAttempt<View> | undefined): void {
+  private releaseAttempt(attempt: ViewAttempt<State> | undefined): void {
     if (attempt === undefined) return;
     const unsubscribe = attempt.unsubscribe;
     attempt.unsubscribe = undefined;
@@ -254,7 +261,7 @@ export class OwnedViewObserver<
     try { unsubscribe(); } catch (cause: unknown) { reportCleanupError(cause); }
   }
 
-  private trackViewClose(view: View): void {
+  private trackViewClose(view: CloseableView<State>): void {
     let finish!: () => void;
     const closing = new Promise<void>((resolve) => { finish = resolve; });
     // Native close can synchronously close this owner; register cleanup first.

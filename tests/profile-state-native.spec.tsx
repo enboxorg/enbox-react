@@ -190,7 +190,7 @@ describe('profile state with the native SDK reader', () => {
     expect(urls.acquire).toHaveBeenCalledOnce();
   });
 
-  it('distinguishes missing profiles from terminal native query failures', async () => {
+  it.each(['eager', 'off', 'lazy'] as const)('distinguishes missing profiles from native query failures in %s mode', async (images) => {
     const missing = { records: {
       query: async () => ({ status: { code: 200 }, records: [] }),
       read: vi.fn(async () => ({ status: { code: 404 } })),
@@ -199,8 +199,8 @@ describe('profile state with the native SDK reader', () => {
       query: async () => ({ status: { code: 400, detail: 'malformed query' } }),
       read: vi.fn(async () => ({ status: { code: 404 } })),
     } } satisfies ProfileReaderSource;
-    const missingHook = renderHook(() => useProfile(missing, 'did:example:missing'));
-    const failingHook = renderHook(() => useProfile(failing, 'did:example:failure'));
+    const missingHook = renderHook(() => useProfile(missing, 'did:example:missing', { images }));
+    const failingHook = renderHook(() => useProfile(failing, 'did:example:failure', { images }));
     await waitFor(() => expect(missingHook.result.current.status).toBe('not-found'));
     await waitFor(() => expect(failingHook.result.current.status).toBe('error'));
     expect(missingHook.result.current.displayName).toBeUndefined();

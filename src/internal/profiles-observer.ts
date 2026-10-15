@@ -30,7 +30,6 @@ type ImageBinding = Readonly<{ blob: Blob; lease: BlobUrlLease }>;
 type ProfileBinding = Readonly<{
   snapshot: ProfileSnapshot | undefined;
   profileValue: ProfileSnapshot['profile']['value'];
-  imagesRequested: boolean;
   result: ProfileResult;
   avatar: ImageBinding | undefined;
   hero: ImageBinding | undefined;
@@ -122,13 +121,6 @@ function fieldState(field: ProfileFieldSnapshot<unknown> | undefined): ProfileFi
 
 function sameFieldState(previous: ProfileFieldState, next: ProfileFieldState): boolean {
   return previous.status === next.status && previous.failure === next.failure;
-}
-
-function projectedStatus(snapshot: ProfileSnapshot | undefined, imagesRequested: boolean): ProfileResult['status'] {
-  if (snapshot === undefined) return 'loading';
-  const profileStatus = snapshot.profile.status;
-  if (!imagesRequested) return profileStatus === 'idle' ? 'loading' : profileStatus;
-  return snapshot.status;
 }
 
 /** React consumers own watches and image leases; the resource shares native reads. */
@@ -287,11 +279,11 @@ export class ProfilesObserver {
         && (snapshot === undefined || snapshot.profile.status === 'loading')
         ? this.reader?.getSnapshot(did)?.profile.value : undefined);
       const previous = this.bindings.get(did);
-      if (previous !== undefined && previous.snapshot === snapshot && previous.profileValue === profileValue
-        && previous.imagesRequested === imagesRequested) continue;
-      const status = projectedStatus(snapshot, imagesRequested);
-      const avatar = bindImage(previous?.avatar, imagesRequested ? snapshot?.avatar.value : undefined);
-      const hero = bindImage(previous?.hero, imagesRequested ? snapshot?.hero.value : undefined);
+      if (previous !== undefined && previous.snapshot === snapshot && previous.profileValue === profileValue) continue;
+      // The selected native reader already applies this consumer's image policy.
+      const status = snapshot?.status ?? 'loading';
+      const avatar = bindImage(previous?.avatar, snapshot?.avatar.value);
+      const hero = bindImage(previous?.hero, snapshot?.hero.value);
       releaseReplacedImage(previous?.avatar, avatar);
       releaseReplacedImage(previous?.hero, hero);
       const projectedFields = Object.freeze({
@@ -317,7 +309,7 @@ export class ProfilesObserver {
         fields,
         loadImages: previous?.result.loadImages ?? (() => this.loadImages(did, generation)),
       });
-      this.bindings.set(did, { snapshot, profileValue, imagesRequested, result, avatar, hero });
+      this.bindings.set(did, { snapshot, profileValue, result, avatar, hero });
       if (result !== this.snapshot.get(did)) {
         nextProfiles ??= new Map(this.snapshot);
         nextProfiles.set(did, result);

@@ -24,13 +24,8 @@ export function createContextStore<Context>(
   opener: ContextViewOpener<Context> | null,
   options: ContextStoreOptions = {},
 ): ContextStore<Context> {
-  const signal = options.signal;
-  const bindingGuard = signal === undefined ? undefined : {
-    isCurrent: () => !signal.aborted,
-    subscribe: (notify: () => void) => {
-      signal.addEventListener('abort', notify, { once: true });
-      return () => signal.removeEventListener('abort', notify);
-    },
-  };
-  return new ContextViewObserver(opener, { bindingGuard, retainWithoutSubscribers: true });
+  return new ContextViewObserver(opener, {
+    ownerSignal: options.signal,
+    retainWithoutSubscribers: true,
+  });
 }

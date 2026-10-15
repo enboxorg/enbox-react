@@ -41,16 +41,8 @@ export function createRecordStore<Item, Selection>(
   options: RecordStoreOptions = {},
 ): RecordStore<Item> | SelectedRecordStore<Item, Selection> {
   if (opener !== null && typeof opener === 'object') return new SelectedRecords(opener);
-  const signal = options.signal;
-  const bindingGuard = signal === undefined ? undefined : {
-    isCurrent: () => !signal.aborted,
-    subscribe: (notify: () => void) => {
-      signal.addEventListener('abort', notify, { once: true });
-      return () => signal.removeEventListener('abort', notify);
-    },
-  };
   return new RecordViewObserver(opener, {
-    bindingGuard,
+    ownerSignal: options.signal,
     retainWithoutSubscribers: true,
     loadAll: options.loadAll === true,
   });

@@ -157,6 +157,16 @@ describe('public profile bindings', () => {
     expect(mocks.acquire).toHaveBeenCalledOnce();
   });
 
+  it('keeps a loading result stable when lazy demand still has no native snapshot', async () => {
+    const enbox = source();
+    const hook = renderHook(() => useProfile(enbox, 'did:a', { images: 'lazy' }));
+    const initial = hook.result.current;
+    expect(initial.status).toBe('loading');
+    await act(async () => { await initial.loadImages(); });
+    expect(hook.result.current).toBe(initial);
+    expect(mocks.acquire).not.toHaveBeenCalled();
+  });
+
   it('reserves lazy demand before image watch attachment can reenter the same control', async () => {
     mocks.snapshots.set('did:a', profile('Alice', new Blob(['avatar'])));
     const observer = new ProfilesObserver(source(), ['did:a'], 'lazy');

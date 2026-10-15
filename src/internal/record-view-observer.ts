@@ -2,7 +2,7 @@ import type { ExpandableRecordView, RecordView, RecordViewState } from '@enbox/b
 
 import { EnboxBindingChangedError } from '../errors.js';
 import { toError } from './errors.js';
-import type { OwnedViewOptions, ViewAttempt } from './owned-view-observer.js';
+import type { CloseableView, OwnedViewOptions, ViewAttempt } from './owned-view-observer.js';
 import { OwnedViewObserver } from './owned-view-observer.js';
 
 export type { BindingGuard } from './owned-view-observer.js';
@@ -34,14 +34,14 @@ const LOADING = Object.freeze({
 
 /** Native record state with owned-view lifecycle and record-only pagination. */
 export class RecordViewObserver<Item> extends OwnedViewObserver<
-  RecordViewState<Item>, IdleRecordViewState<Item>, RecordViewResult<Item>, RecordView<Item>
+  RecordViewState<Item>, IdleRecordViewState<Item>, RecordViewResult<Item>
 > {
-  private readonly _pagination: WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>;
-  private readonly _expanding = new WeakSet<ViewAttempt<RecordView<Item>>>();
+  private readonly _pagination: WeakMap<ViewAttempt<RecordViewState<Item>>, Promise<void>>;
+  private readonly _expanding = new WeakSet<ViewAttempt<RecordViewState<Item>>>();
   private readonly _loadAll: boolean;
 
   public constructor(opener: RecordViewOpener<Item> | null, options: RecordViewObserverOptions = {}) {
-    const pagination = new WeakMap<ViewAttempt<RecordView<Item>>, Promise<void>>();
+    const pagination = new WeakMap<ViewAttempt<RecordViewState<Item>>, Promise<void>>();
     super(opener, {
       idle: IDLE,
       loading: LOADING,
@@ -125,7 +125,9 @@ export class RecordViewObserver<Item> extends OwnedViewObserver<
     return pagination;
   };
 
-  private isExpandable(view: RecordView<Item>): view is ExpandableRecordView<Item> {
+  private isExpandable(
+    view: CloseableView<RecordViewState<Item>>,
+  ): view is CloseableView<RecordViewState<Item>> & Pick<ExpandableRecordView<Item>, 'loadMore'> {
     return 'loadMore' in view && typeof view.loadMore === 'function';
   }
 }
