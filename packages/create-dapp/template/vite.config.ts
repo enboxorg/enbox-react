@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, normalizePath } from 'vite';
+
+const appWorker = normalizePath(fileURLToPath(new URL('./src/sw.ts', import.meta.url)));
 
 export default defineConfig({
   plugins: [
@@ -31,7 +34,14 @@ export default defineConfig({
       },
     },
   ],
-  worker: { format: 'es', rollupOptions: { output: { entryFileNames: 'sw.js' } } },
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: ({ facadeModuleId }) => facadeModuleId === appWorker ? 'sw.js' : 'assets/[name]-[hash].js',
+      },
+    },
+  },
   server: { host: '127.0.0.1', headers: { 'Service-Worker-Allowed': '/' } },
   preview: { host: '127.0.0.1' },
 });

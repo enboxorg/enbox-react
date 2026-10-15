@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 import { packSdk } from './pack-sdk.mjs';
 
@@ -22,36 +23,36 @@ function writeJson(path, value) {
 }
 
 function usePackedSdk(project, packedSdk, sdk) {
+  const fixture = join(root, 'tests/compatibility/starter');
   const manifestPath = join(project, 'package.json');
-  const lockPath = join(project, 'package-lock.json');
   const manifest = readJson(manifestPath);
-  const lock = readJson(lockPath);
-  const originalLock = structuredClone(lock);
-  const sdkEntry = lock.packages['node_modules/@enbox/react'];
-  assert.ok(sdkEntry, 'The starter lockfile must contain the React SDK.');
-  assert.equal(manifest.dependencies['@enbox/react'], sdkEntry.version);
-  assert.deepEqual(sdkEntry.dependencies, sdk.dependencies);
-  assert.deepEqual(sdkEntry.peerDependencies, sdk.peerDependencies);
+  const candidate = readJson(join(fixture, 'package.json'));
+  for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    if (candidate[section] === undefined) delete manifest[section];
+    else manifest[section] = { ...candidate[section] };
+  }
+  const parsed = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(fixture, 'bun.lock'), 'utf8'));
+  if (parsed.error) throw new Error('The starter candidate lockfile is invalid.');
+  const lock = parsed.config;
+  const sdkEntry = lock.packages['@enbox/react'];
+  assert.ok(sdkEntry, 'The starter candidate lockfile must contain the React SDK.');
+  for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+    assert.deepEqual(sdkEntry[1][section], sdk[section], `Regenerate the starter candidate lockfile for changed SDK ${section}.`);
+  }
 
   const dependency = 'file:' + packedSdk.immutableArchivePath;
   manifest.dependencies['@enbox/react'] = dependency;
-  lock.packages[''].dependencies['@enbox/react'] = dependency;
-  Object.assign(sdkEntry, {
-    name: sdk.name,
-    version: sdk.version,
-    resolved: dependency,
-    integrity: packedSdk.integrity,
-  });
-  // Registry packages and their integrity stay exactly as committed.
-  const unchangedLock = structuredClone(lock);
-  unchangedLock.packages[''].dependencies['@enbox/react'] =
-    originalLock.packages[''].dependencies['@enbox/react'];
-  unchangedLock.packages['node_modules/@enbox/react'] =
-    originalLock.packages['node_modules/@enbox/react'];
-  assert.deepEqual(unchangedLock, originalLock);
+  lock.workspaces[''].name = manifest.name;
+  lock.workspaces[''].dependencies['@enbox/react'] = dependency;
+  sdkEntry[0] = '@enbox/react@' + packedSdk.immutableArchivePath;
+  sdkEntry[2] = packedSdk.integrity;
+  // Candidate upgrades use their own registry graph, without changing the shipped starter.
+  rmSync(join(project, 'node_modules'), { recursive: true, force: true });
+  rmSync(join(project, 'package-lock.json'));
   writeJson(manifestPath, manifest);
-  writeJson(lockPath, lock);
-  return lock;
+  const lockfile = JSON.stringify(lock, null, 2) + '\n';
+  writeFileSync(join(project, 'bun.lock'), lockfile);
+  return lockfile;
 }
 
 mkdirSync(artifacts, { recursive: true });
@@ -100,12 +101,10 @@ try {
 
   const sdk = readJson(join(root, 'package.json'));
   const patchedLock = usePackedSdk(project, packedSdk, sdk);
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: project, env: environment, stdio: 'inherit' });
-  assert.deepEqual(readJson(join(project, 'package-lock.json')), patchedLock, 'npm ci must leave the patched lockfile unchanged.');
+  execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: project, env: environment, stdio: 'inherit' });
+  assert.equal(readFileSync(join(project, 'bun.lock'), 'utf8'), patchedLock, 'Bun must leave the candidate lockfile unchanged.');
   assert.equal(readJson(join(project, 'node_modules/@enbox/react/package.json')).version, sdk.version);
-  for (const script of ['typecheck', 'build']) {
-    execFileSync('npm', ['run', script], { cwd: project, env: environment, stdio: 'inherit' });
-  }
+  execFileSync('npm', ['run', 'build'], { cwd: project, env: environment, stdio: 'inherit' });
   assert.equal(existsSync(join(project, '__fixtures__')), false, 'The generator must not include browser test fixtures.');
   assert.equal(existsSync(join(project, 'dist/__fixtures__')), false, 'The production build must not include browser test fixtures.');
   const fixtures = join(project, '__fixtures__');
@@ -115,6 +114,7 @@ try {
     ['session.tsx.fixture', 'session.tsx'],
     ['tsconfig.fixture.json', 'tsconfig.fixture.json'],
     ['protocol.mjs', 'protocol.mjs'],
+    ['workers.mjs', 'workers.mjs'],
   ]) {
     cpSync(join(root, 'tests/browser/fixtures', source), join(fixtures, destination));
   }
@@ -127,6 +127,9 @@ try {
   execFileSync(process.execPath, [
     join(root, 'node_modules/@playwright/test/cli.js'), 'test', '--config', join(root, 'playwright.config.ts'),
   ], { cwd: root, env: environment, stdio: 'inherit' });
+  execFileSync(process.execPath, [join(fixtures, 'workers.mjs')], {
+    cwd: project, env: environment, stdio: 'inherit',
+  });
   assert.deepEqual(readFileSync(packedSdk.archivePath), readFileSync(packedSdk.immutableArchivePath),
     'The publish candidate must be the SDK archive tested by the generated app.');
 } finally {

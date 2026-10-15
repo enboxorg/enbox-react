@@ -90,10 +90,26 @@ Exact pins make updates deliberate, but do not establish that a release is
 safe or automatically bring in security fixes. Review dependency updates and
 their lockfile changes, including advisories, before accepting them.
 
-`test:browser` creates a temporary project outside the repository and installs
-both tested archives. Only the local SDK dependency and its integrity are
-replaced in the generated lockfile; registry dependencies remain frozen. Test
-fixtures are added after the production build and are never generated for users.
+`test:browser` creates a temporary project outside the repository. It first
+checks the shipped npm dependency tree, then installs the packed SDK with the
+separately locked dependencies in `tests/compatibility/starter`. That fixture
+lets SDK dependencies change before their release without changing the shipped
+starter's published SDK pin. Both registry trees remain frozen; only the local
+SDK archive path and integrity are refreshed. App source comes from the same
+packed template. Test fixtures are added after its production build and are
+never generated for users.
+
+After changing the candidate fixture's exact dependency versions, build and pack
+the SDK before regenerating its lockfile:
+
+```sh
+bun run build
+node --input-type=module -e "import { packSdk } from './scripts/pack-sdk.mjs'; packSdk(process.cwd())"
+bun install --cwd tests/compatibility/starter --lockfile-only --ignore-scripts --force
+```
+
+`--force` refreshes the local archive metadata. Review the lockfile diff and
+accept registry version changes only when intended.
 
 For an intentional dependency change, edit the exact version in
 `package.json`, temporarily set `install.frozenLockfile = false` in

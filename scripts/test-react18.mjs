@@ -27,8 +27,9 @@ const lock = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(template
 if (lock.error) throw new Error('The React 18 fixture lockfile is invalid.');
 const sdk = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const localPackage = lock.config.packages['@enbox/react'];
-assert.deepEqual(localPackage[1].dependencies, sdk.dependencies, 'Regenerate the fixture lockfile for changed SDK dependencies.');
-assert.deepEqual(localPackage[1].peerDependencies, sdk.peerDependencies, 'Regenerate the fixture lockfile for changed SDK peers.');
+for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+  assert.deepEqual(localPackage[1][section], sdk[section], `Regenerate the fixture lockfile for changed SDK ${section}.`);
+}
 lock.config.workspaces[''].dependencies['@enbox/react'] = `file:../${archiveName}`;
 localPackage[0] = `@enbox/react@../${archiveName}`;
 // The code under test changes; only its archive checksum is refreshed. Every

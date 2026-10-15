@@ -75,6 +75,15 @@ Plain SSR is covered; a framework-specific server-component application is
 not part of the automated fixtures. Offline testing verifies the application
 shell, not a remote write queue or shared-context editing behavior.
 
+The shipped app uses its npm lockfile and published SDK. Candidate checks
+replace only dependency metadata with `tests/compatibility/starter` and install
+its frozen Bun lockfile. This keeps SDK dependency upgrades independent of the
+starter's next release without duplicating its source. The worker build check
+also adds an ordinary worker temporarily and verifies it cannot overwrite the
+application service worker.
+Package checks verify that both SDK consumer fixtures select supported peer
+versions: a frozen Bun installation can accept an incompatible peer version.
+
 ## React compatibility
 
 Shared-store regressions exercise one native view across React and headless
