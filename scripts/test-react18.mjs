@@ -1,37 +1,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { packSdk } from './pack-sdk.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const template = join(root, 'tests/compatibility/react18');
 const consumer = join(root, '.artifacts/react18');
 const generated = join(consumer, 'generated');
-const archive = join(root, '.artifacts/enbox-react.tgz');
-
-mkdirSync(join(root, '.artifacts'), { recursive: true });
-// Match clean CI checkouts regardless of the developer's local file umask.
-// The dependent app's lockfile can then pin the exact tested release archive.
-function normalizePackageFiles(directory) {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) normalizePackageFiles(path);
-    else if (entry.isFile()) chmodSync(path, 0o644);
-  }
-}
-for (const directory of ['src', 'dist']) normalizePackageFiles(join(root, directory));
-for (const file of ['package.json', 'README.md', 'LICENSE']) chmodSync(join(root, file), 0o644);
-execFileSync('bun', ['pm', 'pack', '--ignore-scripts', '--filename', archive, '--quiet'], {
-  cwd: root, stdio: 'inherit',
-});
-// Immutable filenames prevent package managers from reusing an older local
-// archive when several iterations share the same package version.
-const packed = readFileSync(archive);
-const archiveName = `enbox-react-${createHash('sha256').update(packed).digest('hex')}.tgz`;
-cpSync(archive, join(root, '.artifacts', archiveName));
+const { archiveName, integrity } = packSdk(root);
 rmSync(generated, { recursive: true, force: true });
 mkdirSync(join(generated, 'tests'), { recursive: true });
 mkdirSync(join(generated, 'type-tests'), { recursive: true });
@@ -48,13 +27,14 @@ const lock = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(template
 if (lock.error) throw new Error('The React 18 fixture lockfile is invalid.');
 const sdk = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const localPackage = lock.config.packages['@enbox/react'];
-assert.deepEqual(localPackage[1].dependencies, sdk.dependencies, 'Regenerate the fixture lockfile for changed SDK dependencies.');
-assert.deepEqual(localPackage[1].peerDependencies, sdk.peerDependencies, 'Regenerate the fixture lockfile for changed SDK peers.');
+for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+  assert.deepEqual(localPackage[1][section], sdk[section], `Regenerate the fixture lockfile for changed SDK ${section}.`);
+}
 lock.config.workspaces[''].dependencies['@enbox/react'] = `file:../${archiveName}`;
 localPackage[0] = `@enbox/react@../${archiveName}`;
 // The code under test changes; only its archive checksum is refreshed. Every
 // registry dependency and integrity remains pinned by the committed lockfile.
-localPackage[2] = `sha512-${createHash('sha512').update(packed).digest('base64')}`;
+localPackage[2] = integrity;
 writeFileSync(join(consumer, 'bun.lock'), JSON.stringify(lock.config, null, 2) + '\n');
 
 for (const entry of readdirSync(join(root, 'tests'), { withFileTypes: true })) {

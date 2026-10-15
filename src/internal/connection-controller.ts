@@ -144,8 +144,11 @@ export class ConnectionController {
     this.listeners.add(listener);
     if (this.listeners.size === 1) this.unsubscribe = this.client.subscribe(() => this.notify());
     return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size === 0) { this.unsubscribe?.(); this.unsubscribe = undefined; }
+      if (!this.listeners.delete(listener) || this.listeners.size !== 0) return;
+      const unsubscribe = this.unsubscribe;
+      // Preserve a replacement handle installed synchronously by native cleanup.
+      this.unsubscribe = undefined;
+      try { unsubscribe?.(); } catch (cause: unknown) { reportCleanupError(cause); }
     };
   };
 

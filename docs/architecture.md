@@ -57,6 +57,10 @@ They are followed by a facade/session check, so delayed guards cannot sign out
 or replace another identity. Disconnect also supersedes a connect waiting on a
 guard. Raw snapshot hooks retain their native contracts.
 
+Subscription cleanup detaches its own handle before calling native cleanup,
+which can synchronously subscribe again. Mutation cleanup also retires its old
+presentation first, so it cannot erase work started by a replacement subscriber.
+
 ## Profile resources
 
 Profile observers are inert during render. Their first subscription retains a
@@ -202,7 +206,7 @@ Create fresh inert clients for server renders and retain one client in the
 browser. Keep stores and codec-bearing manifests inside the application's
 client boundary; they cannot be serialized as server-component props.
 
-The Notes example registers its own service worker and waits for that worker
+The standalone starter registers its own service worker and waits for that worker
 to control the page before rendering the provider. It activates the remaining
 browser polyfills separately. The browser SDK currently activates worker
 updates automatically. Apps requiring deferred activation must account for

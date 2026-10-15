@@ -1,0 +1,19 @@
+{
+  "name": "enbox-react-starter-tests",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@enbox/browser": "0.3.79",
+    "@enbox/react": "file:../../../.artifacts/enbox-react.tgz",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  }
+}
