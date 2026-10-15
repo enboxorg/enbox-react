@@ -1,6 +1,7 @@
 import type { ContextView, ContextViewState } from '@enbox/browser';
 
-import { OwnedViewObserver, type BindingGuard } from './owned-view-observer.js';
+import type { OwnedViewOptions } from './owned-view-observer.js';
+import { OwnedViewObserver } from './owned-view-observer.js';
 
 export type ContextViewOpener<Context> = (signal: AbortSignal) => Promise<ContextView<Context>>;
 
@@ -11,7 +12,7 @@ export type IdleContextViewState<Context> = Readonly<{
 }>;
 
 export type ContextViewResult<Context> = (ContextViewState<Context> | IdleContextViewState<Context>) & Readonly<{
-  /** Reopens the catalog. Opening failures reject and are published in state. */
+  /** Reopens an active catalog; resolves after its native subscription attaches. */
   retry: () => Promise<void>;
 }>;
 
@@ -21,14 +22,14 @@ const LOADING = Object.freeze({ status: 'loading' as const, contexts: EMPTY_CONT
 
 /** Native context state using the same ownership lifecycle as record views. */
 export class ContextViewObserver<Context> extends OwnedViewObserver<
-  ContextViewState<Context>, IdleContextViewState<Context>, ContextViewResult<Context>, ContextView<Context>
+  ContextViewState<Context>, IdleContextViewState<Context>, ContextViewResult<Context>
 > {
-  public constructor(opener: ContextViewOpener<Context> | null, bindingGuard?: BindingGuard, keepAlive = false) {
+  public constructor(opener: ContextViewOpener<Context> | null, options: OwnedViewOptions = {}) {
     super(opener, {
       idle: IDLE,
       loading: LOADING,
-      error: (error) => ({ status: 'error', contexts: EMPTY_CONTEXTS, error }),
-      result: (state, retry) => Object.freeze({ ...state, retry }),
-    }, bindingGuard, keepAlive);
+      createErrorState: (error) => ({ status: 'error', contexts: EMPTY_CONTEXTS, error }),
+      createSnapshot: (state, retry) => Object.freeze({ ...state, retry }),
+    }, options);
   }
 }

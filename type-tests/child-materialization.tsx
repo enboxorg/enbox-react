@@ -116,6 +116,24 @@ export function ChildMaterializationContracts(): void {
   // @ts-expect-error native record handles remain lazy
   handles.records[0]?.children;
 
+  const explicitParent = useRecords<typeof protocol.definition, typeof protocol.codecs, typeof protocol.roleGroups, 'folder/page'>(
+    protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 }, materialize: true },
+  );
+  const explicitParentRow: TypedMaterializedRecord<Page> | undefined = explicitParent.records[0];
+  const explicitHandles = useRecords<typeof protocol.definition, typeof protocol.codecs, typeof protocol.roleGroups, 'folder/page'>(
+    protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 } },
+  );
+  const explicitHandle: TypedRecord<Page> | undefined = explicitHandles.records[0];
+  void [explicitParentRow, explicitHandle];
+  // @ts-expect-error parent-only materialization does not add selected children
+  explicitParent.records[0]?.children;
+  // @ts-expect-error four explicit generic arguments do not infer a child selection
+  useRecords<typeof protocol.definition, typeof protocol.codecs, typeof protocol.roleGroups, 'folder/page'>(protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 }, materialize: { children: ['folder/page/live'] } });
+  // @ts-expect-error explicit four-argument calls retain the absent materialization contract
+  useRecords<typeof protocol.definition, typeof protocol.codecs, typeof protocol.roleGroups, 'folder/page'>(protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 }, materialize: undefined });
+  // @ts-expect-error explicit generic arguments do not permit caller-owned view signals
+  useRecords<typeof protocol.definition, typeof protocol.codecs, typeof protocol.roleGroups, 'folder/page'>(protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 }, materialize: true, signal: new AbortController().signal });
+
   // @ts-expect-error shorthand child names do not identify exact protocol paths
   useRecords(protocol, 'folder/page', { within: 'folder-context', pagination: { limit: 10 }, materialize: { children: ['live'] } });
   // @ts-expect-error a descendant below two edges is not a direct child

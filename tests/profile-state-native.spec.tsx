@@ -99,6 +99,32 @@ describe('profile state with the native SDK reader', () => {
     expect(source.records.read).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves the native disposal rejection shared by concurrent image waiters', async () => {
+    const images = deferred<{ status: { code: number } }>();
+    const source = { records: {
+      query: async () => ({ status: { code: 200 }, records: [profileRecord('Alice')] }),
+      read: vi.fn(() => images.promise),
+    } } satisfies ProfileReaderSource;
+    const first = renderHook(() => useProfile(source, 'did:example:alice', { images: 'lazy' }));
+    const second = renderHook(() => useProfile(source, 'did:example:alice', { images: 'lazy' }));
+    await waitFor(() => expect(first.result.current.status).toBe('settled'));
+    let outcomes!: Promise<PromiseSettledResult<void>[]>;
+    act(() => {
+      outcomes = Promise.allSettled([first.result.current.loadImages(), second.result.current.loadImages()]);
+    });
+    await waitFor(() => expect(source.records.read).toHaveBeenCalledTimes(2));
+    first.unmount();
+    second.unmount();
+    const [one, two] = await outcomes;
+    expect(one?.status).toBe('rejected');
+    expect(two?.status).toBe('rejected');
+    if (one?.status === 'rejected' && two?.status === 'rejected') {
+      expect(one.reason).toBe(two.reason);
+      expect(one.reason).toMatchObject({ message: expect.stringContaining('disposed while loading profile') });
+    }
+    images.resolve({ status: { code: 404 } });
+  });
+
   it('retains usable lazy text while the image reader settles its own native root state', async () => {
     const query = deferred<{ status: { code: number }; records: ReturnType<typeof profileRecord>[] }>();
     const source = { records: {
@@ -164,7 +190,7 @@ describe('profile state with the native SDK reader', () => {
     expect(urls.acquire).toHaveBeenCalledOnce();
   });
 
-  it('distinguishes missing profiles from terminal native query failures', async () => {
+  it.each(['eager', 'off', 'lazy'] as const)('distinguishes missing profiles from native query failures in %s mode', async (images) => {
     const missing = { records: {
       query: async () => ({ status: { code: 200 }, records: [] }),
       read: vi.fn(async () => ({ status: { code: 404 } })),
@@ -173,8 +199,8 @@ describe('profile state with the native SDK reader', () => {
       query: async () => ({ status: { code: 400, detail: 'malformed query' } }),
       read: vi.fn(async () => ({ status: { code: 404 } })),
     } } satisfies ProfileReaderSource;
-    const missingHook = renderHook(() => useProfile(missing, 'did:example:missing'));
-    const failingHook = renderHook(() => useProfile(failing, 'did:example:failure'));
+    const missingHook = renderHook(() => useProfile(missing, 'did:example:missing', { images }));
+    const failingHook = renderHook(() => useProfile(failing, 'did:example:failure', { images }));
     await waitFor(() => expect(missingHook.result.current.status).toBe('not-found'));
     await waitFor(() => expect(failingHook.result.current.status).toBe('error'));
     expect(missingHook.result.current.displayName).toBeUndefined();

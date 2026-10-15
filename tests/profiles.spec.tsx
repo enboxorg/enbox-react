@@ -157,6 +157,59 @@ describe('public profile bindings', () => {
     expect(mocks.acquire).toHaveBeenCalledOnce();
   });
 
+  it('keeps a loading result stable when lazy demand still has no native snapshot', async () => {
+    const enbox = source();
+    const hook = renderHook(() => useProfile(enbox, 'did:a', { images: 'lazy' }));
+    const initial = hook.result.current;
+    expect(initial.status).toBe('loading');
+    await act(async () => { await initial.loadImages(); });
+    expect(hook.result.current).toBe(initial);
+    expect(mocks.acquire).not.toHaveBeenCalled();
+  });
+
+  it('reserves lazy demand before image watch attachment can reenter the same control', async () => {
+    mocks.snapshots.set('did:a', profile('Alice', new Blob(['avatar'])));
+    const observer = new ProfilesObserver(source(), ['did:a'], 'lazy');
+    const release = observer.subscribe(() => {});
+    const stopImageWatch = vi.fn();
+    let reentered!: Promise<void>;
+    mocks.watch.mockImplementationOnce((_dids, notify) => {
+      reentered = observer.getSnapshot().get('did:a')!.loadImages();
+      notify();
+      return stopImageWatch;
+    });
+    try {
+      await Promise.all([observer.getSnapshot().get('did:a')!.loadImages(), reentered]);
+      expect(mocks.watch).toHaveBeenCalledTimes(2);
+      expect(observer.getSnapshot().get('did:a')?.avatarUrl).toBeDefined();
+      expect(mocks.acquire).toHaveBeenCalledOnce();
+    } finally {
+      release();
+    }
+    expect(stopImageWatch).toHaveBeenCalledOnce();
+  });
+
+  it('releases failed lazy watch demand and allows the same control to retry', async () => {
+    mocks.snapshots.set('did:a', profile('Alice', new Blob(['avatar'])));
+    const observer = new ProfilesObserver(source(), ['did:a'], 'lazy');
+    const release = observer.subscribe(() => {});
+    const loadImages = observer.getSnapshot().get('did:a')!.loadImages;
+    const failure = new Error('image watch failed');
+    mocks.watch.mockImplementationOnce(() => { throw failure; });
+    try {
+      await expect(loadImages()).rejects.toBe(failure);
+      expect(observer.getSnapshot().get('did:a')?.fields.avatar.status).toBe('idle');
+      expect(mocks.loadImages).not.toHaveBeenCalled();
+      expect(mocks.acquire).not.toHaveBeenCalled();
+      expect(mocks.dispose).toHaveBeenCalledOnce();
+      await loadImages();
+      expect(observer.getSnapshot().get('did:a')?.avatarUrl).toBeDefined();
+      expect(mocks.createReader).toHaveBeenCalledTimes(3);
+    } finally {
+      release();
+    }
+  });
+
   it('fences replaced and reactivated image controls while preserving issued rejections', async () => {
     const first = source(); const second = source();
     mocks.snapshots.set('did:a', profile('Alice'));

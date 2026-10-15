@@ -7,7 +7,7 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { EnboxMutationSnapshot } from '../internal/mutation-observer.js';
 import { EnboxMutationObserver } from '../internal/mutation-observer.js';
 import { sameConnectionBinding, selectConnectionBinding } from '../internal/connection-binding.js';
-import { useConnection } from './connection.js';
+import { useConnectionStore } from './connection.js';
 import { useEnboxClient } from '../provider.js';
 
 export type EnboxMutation<Variables, Result> = (enbox: Enbox, variables: Variables) => Promise<Result>;
@@ -16,22 +16,24 @@ export type EnboxMutationOptions = Readonly<{
   scope?: unknown;
 }>;
 export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot<Variables> & Readonly<{
+  /** Issue work through this render's binding; each call keeps its own outcome. */
   run: (variables: Variables) => Promise<Result>;
+  /** Clear the displayed error without cancelling writes or clearing pending work. */
   reset: () => void;
   /** Check before caller UI effects after an issued write finishes. */
   isCurrent: () => boolean;
 }>;
 
-/** Invokes once through the rendered session; never redirects old UI to a new identity. */
+/** Run session-bound mutations with scoped progress and error presentation. */
 export function useEnboxMutation<Variables = void, Result = unknown>(
   operation: EnboxMutation<Variables, Result>,
   options: EnboxMutationOptions = {},
 ): EnboxMutationResult<Variables, Result> {
   const client = useEnboxClient();
-  const expected = useConnection(selectConnectionBinding, sameConnectionBinding);
+  const binding = useConnectionStore(client, selectConnectionBinding, sameConnectionBinding);
   const observer = useMemo(
-    () => new EnboxMutationObserver<Variables>(client, expected),
-    [client, expected, options.scope],
+    () => new EnboxMutationObserver<Variables>(client, binding),
+    [client, binding, options.scope],
   );
   const snapshot = useSyncExternalStore(
     observer.subscribe,

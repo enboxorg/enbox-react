@@ -14,17 +14,18 @@ import { config, NotesProtocol } from './application.js';
 function Notes() {
   const [title, setTitle] = useState('');
   const notes = useRecords(NotesProtocol, 'note', { materialize: true, pagination: { limit: 20 } });
-  const create = useEnboxMutation(async (enbox, data: Note) =>
+  const createNote = useEnboxMutation(async (enbox, data: Note) =>
     enbox.using(NotesProtocol).records.create('note', { data }));
-  const remove = useEnboxMutation(async (enbox, recordId: string) =>
+  const deleteNote = useEnboxMutation(async (enbox, recordId: string) =>
     enbox.using(NotesProtocol).records.delete('note', { recordId }));
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const submitted = title.trim();
     try {
-      await create.run({ title: submitted });
-      if (create.isCurrent()) {
+      await createNote.run({ title: submitted });
+      // Clear only the submitted draft while its connection binding is still active.
+      if (createNote.isCurrent()) {
         setTitle((draft) => draft.trim() === submitted ? '' : draft);
       }
     } catch {
@@ -37,10 +38,10 @@ function Notes() {
       <form onSubmit={(event) => void submit(event)}>
         <label htmlFor="title">New note</label>
         <input id="title" value={title} maxLength={500} onChange={(event) => setTitle(event.target.value)} required />
-        <button disabled={create.isPending || title.trim() === ''}>Save note</button>
+        <button disabled={createNote.isPending || title.trim() === ''}>Save note</button>
       </form>
-      {create.error && <p role="alert">{create.error.message}</p>}
-      {remove.error && <p role="alert">{remove.error.message}</p>}
+      {createNote.error && <p role="alert">{createNote.error.message}</p>}
+      {deleteNote.error && <p role="alert">{deleteNote.error.message}</p>}
       {notes.error && <p role="alert">{notes.error.message}</p>}
       {notes.status === 'loading' && <p>Opening saved notes…</p>}
       {notes.status === 'ready' && !notes.current && <p>Showing saved notes while your wallet catches up.</p>}
@@ -48,7 +49,7 @@ function Notes() {
         {notes.records.map(({ record, value }) => (
           <li key={record.id}>
             <span>{value.title}</span>
-            <button type="button" disabled={remove.isPending} onClick={() => { void remove.run(record.id).catch(() => {}); }}>
+            <button type="button" disabled={deleteNote.isPending} onClick={() => { void deleteNote.run(record.id).catch(() => {}); }}>
               Delete
             </button>
           </li>

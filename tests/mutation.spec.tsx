@@ -163,6 +163,40 @@ describe('session-bound mutations', () => {
     expect(listeners.size).toBe(0);
   });
 
+  it('keeps a replacement subscription active when native cleanup resubscribes synchronously', async () => {
+    const initial = connected();
+    const { client, listeners } = controlledClient(initial);
+    let observer!: EnboxMutationObserver<void>;
+    let releaseReplacement = (): void => {};
+    let replaceOnCleanup = true;
+    const store = {
+      ...client,
+      subscribe: (notify: (snapshot: ConnectionSnapshot) => void) => {
+        const unsubscribe = client.subscribe(notify);
+        return () => {
+          unsubscribe();
+          if (replaceOnCleanup) {
+            replaceOnCleanup = false;
+            releaseReplacement = observer.subscribe(() => {});
+          }
+        };
+      },
+    };
+    observer = new EnboxMutationObserver<void>(store, initial);
+    const release = observer.subscribe(() => {});
+    try {
+      release();
+      expect(observer.isCurrent()).toBe(true);
+      expect(listeners.size).toBe(1);
+      await expect(observer.run(async () => 'saved', undefined)).resolves.toBe('saved');
+    } finally {
+      release();
+      releaseReplacement();
+    }
+    expect(observer.isCurrent()).toBe(false);
+    expect(listeners.size).toBe(0);
+  });
+
   it.each([
     ['a null-prototype object', () => Object.create(null) as unknown],
     ['throwing coercion', () => ({ [Symbol.toPrimitive](): never { throw new Error('coercion failed'); } })],

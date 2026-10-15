@@ -189,6 +189,41 @@ describe('selected record owners', () => {
     cleanup.resolve(); await closing; expect(closed).toBe(true);
   });
 
+  it('waits for old and current cleanup across concurrent closes and reports failures once', async () => {
+    const oldCleanup = deferred<void>();
+    const currentCleanup = deferred<void>();
+    const oldView = new ControlledView(['a']);
+    const currentView = new ControlledView(['b']);
+    oldView.close.mockImplementation(() => oldCleanup.promise);
+    currentView.close.mockImplementation(() => currentCleanup.promise);
+    const failure = new Error('old selection cleanup failed');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = createRecordStore({ selection: null as string | null,
+      open: async (key) => key === 'a' ? oldView : currentView });
+    try {
+      await store.select('a');
+      await store.select('b');
+      let completed = 0;
+      const first = store.close().then(() => { completed += 1; });
+      const second = store.close().then(() => { completed += 1; });
+      currentCleanup.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(completed).toBe(0);
+      oldCleanup.reject(failure);
+      await Promise.all([first, second]);
+      expect(completed).toBe(2);
+      expect(oldView.close).toHaveBeenCalledOnce();
+      expect(currentView.close).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Resource cleanup failed.', failure);
+    } finally {
+      oldCleanup.resolve();
+      currentCleanup.resolve();
+      await store.close();
+      warn.mockRestore();
+    }
+  });
+
   it('includes a retiring native view when its cleanup synchronously closes the owner', async () => {
     const cleanup = deferred<void>();
     const native = new ControlledView(['a']);

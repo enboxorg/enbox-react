@@ -16,11 +16,16 @@ import { useEnboxClient } from '../provider.js';
 
 const SERVER_CONNECTION: ConnectionSnapshot = Object.freeze({ phase: 'initializing' });
 const getServerSnapshot = (): ConnectionSnapshot => SERVER_CONNECTION;
-const identity = (snapshot: ConnectionSnapshot): ConnectionSnapshot => snapshot;
+const selectConnectionSnapshot = (snapshot: ConnectionSnapshot): ConnectionSnapshot => snapshot;
 
 export type ConnectionSelector<Selection> = (snapshot: ConnectionSnapshot) => Selection;
 export type EqualityFn<Selection> = (previous: Selection, next: Selection) => boolean;
 
+/**
+ * Read the native connection snapshot or a selected value. Selector equality
+ * controls updates and defaults to Object.is. Use useEnboxConnection for
+ * presentation state and guarded actions.
+ */
 export function useConnection(): ConnectionSnapshot;
 export function useConnection<Selection>(
   selector: ConnectionSelector<Selection>,
@@ -31,7 +36,7 @@ export function useConnection<Selection>(
   isEqual?: EqualityFn<Selection>,
 ): ConnectionSnapshot | Selection {
   const client = useEnboxClient();
-  return useConnectionStore(client, selector ?? (identity as ConnectionSelector<Selection>), isEqual);
+  return useConnectionStore(client, selector ?? (selectConnectionSnapshot as ConnectionSelector<Selection>), isEqual);
 }
 
 const noop = (): void => {};
@@ -62,6 +67,7 @@ export type ConnectionActions = Pick<
   | 'retryRemote'
 >;
 
+/** Stable, receiver-bound actions that preserve native snapshot results. */
 export function useConnectionActions(): ConnectionActions {
   const client = useEnboxClient();
   return useMemo(() => Object.freeze({
@@ -90,6 +96,10 @@ export function useSyncStatus(): ConnectionSnapshot['sync'] {
   return useConnection(selectSync);
 }
 
+/**
+ * Bind the published facade to a typed protocol, or return undefined without a
+ * facade. The binding is recreated when the facade or protocol reference changes.
+ */
 export function useProtocol<
   Definition extends ProtocolDefinition,
   Codecs extends TypedProtocol['codecs'],

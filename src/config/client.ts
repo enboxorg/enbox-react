@@ -16,11 +16,11 @@ export type CreateEnboxClientOptions = {
   | { connectHandler: ConnectHandler; wallet?: never }
 );
 
-const clientWalletOptions = new WeakMap<ConnectionStore, BrowserConnectHandlerOptions>();
+const walletOptionsByClient = new WeakMap<ConnectionStore, BrowserConnectHandlerOptions>();
 
-/** Factory metadata used by providers without changing the native client type. */
+/** Preserve wallet defaults when a factory-created client is passed to a provider. */
 export function getClientWalletOptions(client: ConnectionStore): BrowserConnectHandlerOptions | undefined {
-  return clientWalletOptions.get(client);
+  return walletOptionsByClient.get(client);
 }
 
 /**
@@ -37,15 +37,15 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
     }
   }
 
-  const wallet = options.connectHandler === undefined ? Object.freeze({ ...options.wallet }) : undefined;
-  const connectHandler = options.connectHandler ?? createWalletConnectHandler(wallet);
+  const walletOptions = options.connectHandler === undefined ? Object.freeze({ ...options.wallet }) : undefined;
+  const connectHandler = options.connectHandler ?? createWalletConnectHandler(walletOptions);
 
   const client = createConnectionStore({
     ...options.connection,
     application: options.application,
     connectHandler,
   });
-  if (wallet !== undefined) clientWalletOptions.set(client, wallet);
+  if (walletOptions !== undefined) walletOptionsByClient.set(client, walletOptions);
   return client;
 }
 
@@ -54,7 +54,6 @@ export function createWalletConnectHandler(options: BrowserConnectHandlerOptions
   const wallet = { ...options };
   return {
     requestAccess: (request) => {
-      // Resolve browser URLs when wallet approval starts, so construction is inert.
       const appIcon = wallet.appIcon === undefined
         ? undefined
         : new URL(wallet.appIcon, window.location.origin).href;

@@ -35,8 +35,14 @@ connection binding from a record context: the first identifies the current
 facade/session; `within` identifies a protocol context.
 
 Use two-space indentation, explicit type imports, and `.js` specifiers for
-local ESM imports. Break long signatures and JSX into readable lines. Comments
-should explain ownership or ordering that the code alone does not make clear.
+local ESM imports. Break long signatures and JSX into readable lines. Use names
+that describe a value's role, such as a native view, rendered snapshot, or
+opening attempt.
+
+Keep JSDoc focused on public contracts that signatures cannot express: when
+resources start and stop, what a Promise waits for, or how errors are surfaced.
+Use internal comments to explain ordering and lifetime checks. Omit comments
+that repeat the code or describe each parameter without adding context.
 
 Add regression tests for changes to resource ownership, session guards, or
 async error handling. Run the relevant suite while developing, then run

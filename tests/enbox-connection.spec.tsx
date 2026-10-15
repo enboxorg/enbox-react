@@ -2,11 +2,30 @@ import type { PropsWithChildren } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EnboxProvider, useEnboxConnection, EnboxBindingChangedError } from '../src/index.js';
+import { ConnectionController } from '../src/internal/connection-controller.js';
 import { connected, controlledClient, deferred, facade } from './helpers.js';
 import { ConnectDeniedError } from '@enbox/browser';
 
 describe('dapp connection workflow', () => {
-  it('retires a borrowed provider guard and rejects its captured controls without disposing the client', async () => {
+  it('requires a live lease after its first retain while allowing deferred cleanup to be reclaimed', async () => {
+    const { client } = controlledClient();
+    const controller = new ConnectionController(client);
+    await controller.connect(undefined, {});
+    const release = controller.retain();
+    release();
+    const unavailable = expect(controller.connect(undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    const releaseAgain = controller.retain();
+    await unavailable;
+    expect(controller.isRetired()).toBe(false);
+    await controller.connect(undefined, {});
+    expect(client.connect).toHaveBeenCalledTimes(2);
+    releaseAgain();
+    await Promise.resolve();
+    expect(controller.isRetired()).toBe(true);
+    await expect(controller.connect(undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
+  });
+
+  it('retires an existing-client provider guard and rejects its captured controls without disposing the client', async () => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();
     const beforeConnect = vi.fn(() => saving.promise);
@@ -152,6 +171,25 @@ describe('dapp connection workflow', () => {
     expect(hook.result.current.isConnecting).toBe(false);
     await act(async () => { guard.resolve(); await Promise.resolve(); });
     expect(client.connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the native connect outcome when its invocation synchronously starts disconnect', async () => {
+    const { client } = controlledClient();
+    const controller = new ConnectionController(client);
+    const approval = deferred<ReturnType<typeof client.getSnapshot>>();
+    const started = deferred<void>();
+    let disconnecting!: Promise<void>;
+    client.connect.mockImplementationOnce(() => {
+      disconnecting = controller.disconnect(undefined, {});
+      started.resolve();
+      return approval.promise;
+    });
+    const outcome = controller.connect(undefined, {}).catch((cause: unknown) => cause);
+    await started.promise;
+    await disconnecting;
+    const failure = new Error('issued approval failed');
+    approval.reject(failure);
+    expect(await outcome).toBe(failure);
   });
 
   it('preserves an issued approval outcome when a disconnect guard fails', async () => {
