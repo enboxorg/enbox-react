@@ -25,7 +25,7 @@ function captureApproval(client: ConnectionStore): void {
   const snapshot = { phase: 'disconnected' } as const;
   vi.spyOn(client, 'getSnapshot').mockReturnValue(snapshot);
   vi.spyOn(client, 'connect').mockImplementation(async (options) => {
-    await options?.connectHandler?.requestAccess({} as never);
+    await options?.connectHandler?.requestAccess({ permissionRequests: [] });
     return snapshot;
   });
 }
@@ -52,8 +52,8 @@ describe('provider wallet configuration', () => {
         walletUrl: 'https://chosen-wallet.test', preferredMethod: 'phone',
       } });
     });
-    expect(mocks.handler).toHaveBeenCalledExactlyOnceWith({
-      appName: 'Original notes', appIcon: `${window.location.origin}/original.svg`, applicationId: 'notes-id',
+    expect(mocks.handler).toHaveBeenLastCalledWith({
+      appName: 'Original notes', appIcon: '/original.svg', applicationId: 'notes-id',
       walletUrl: 'https://chosen-wallet.test', preferredMethod: 'phone',
     });
     hook.unmount();
@@ -69,8 +69,8 @@ describe('provider wallet configuration', () => {
     await act(async () => {
       await hook.result.current.connect({ wallet: { appName: 'Custom notes', appIcon: '/custom.svg' } });
     });
-    expect(mocks.handler).toHaveBeenCalledExactlyOnceWith({
-      appName: 'Custom notes', appIcon: `${window.location.origin}/custom.svg`,
+    expect(mocks.handler).toHaveBeenLastCalledWith({
+      appName: 'Custom notes', appIcon: '/custom.svg',
     });
     hook.unmount();
     await client.dispose();

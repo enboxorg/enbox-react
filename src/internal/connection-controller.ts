@@ -1,10 +1,9 @@
 import type {
   BrowserConnectHandlerOptions, ConnectionSnapshot, ConnectionStore,
-  DwnEndpointResolution,
+  DwnEndpointResolution, VaultConnectOptions,
 } from '@enbox/browser';
-import { isConnectDeniedError } from '@enbox/browser';
+import { BrowserConnectHandler, isConnectDeniedError } from '@enbox/browser';
 
-import { createWalletConnectHandler } from '../config/client.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { isConnectionBindingCurrent } from './connection-binding.js';
 import { reportCleanupError, toError } from './errors.js';
@@ -20,9 +19,13 @@ export type DisconnectOptions = NativeDisconnectOptions & {
   /** The host explicitly chose an alternative to its normal disconnect guard. */
   skipBeforeDisconnect?: boolean;
 };
-export type BeforeConnect = (context: Readonly<{
+type ConnectRequest = Readonly<
+  | { action: 'connect'; options: ConnectOptions | undefined }
+  | { action: 'connectVault'; options: VaultConnectOptions | undefined }
+>;
+
+export type BeforeConnect = (context: ConnectRequest & Readonly<{
   snapshot: ConnectionSnapshot;
-  options: ConnectOptions | undefined;
 }>) => void | Promise<void>;
 export type BeforeDisconnect = (options: DisconnectOptions | undefined) => void | Promise<void>;
 export type ConnectionPolicy = Readonly<{
@@ -65,7 +68,9 @@ function projectConnectionState(snapshot: ConnectionSnapshot, workflow: Workflow
   const session = isConnected ? snapshot.session : undefined;
   const workflowError = workflow.error?.binding.enbox === snapshot.enbox
     && workflow.error?.binding.session === snapshot.session ? workflow.error?.value : undefined;
-  const error = workflowError ?? snapshot.error;
+  const connectionError = workflowError ?? (
+    snapshot.error !== undefined && !isConnectDeniedError(snapshot.error) ? snapshot.error : undefined
+  );
   return Object.freeze({
     enbox: isConnected ? snapshot.enbox : undefined,
     did: session?.did,
@@ -78,7 +83,7 @@ function projectConnectionState(snapshot: ConnectionSnapshot, workflow: Workflow
       : snapshot.walletReapprovalRequired === true
         ? { reason: walletRepairReason(snapshot.connection?.state), status: 'required' as const }
         : undefined,
-    connectionError: error !== undefined && !isConnectDeniedError(error) ? error : undefined,
+    connectionError,
     sync: snapshot.sync,
     remoteDwn: isConnected ? snapshot.remoteDwn : undefined,
   });
@@ -153,11 +158,20 @@ export class ConnectionController {
   };
 
   public connect(options: ConnectOptions | undefined, policy: ConnectionPolicy): Promise<void> {
+    return this.startConnect({ action: 'connect', options }, policy);
+  }
+
+  public connectVault(options: VaultConnectOptions | undefined, policy: ConnectionPolicy): Promise<void> {
+    return this.startConnect({ action: 'connectVault', options }, policy);
+  }
+
+  /** Wallet and vault requests share one guarded operation for this provider. */
+  private startConnect(request: ConnectRequest, policy: ConnectionPolicy): Promise<void> {
     if (!this.isAvailable()) return Promise.reject(new EnboxBindingChangedError());
     if (this.connectPromise !== undefined) return this.connectPromise;
     let expected = this.client.getSnapshot();
     const generation = this.workflowGeneration;
-    const repairReason = expected.walletReapprovalRequired === true
+    const repairReason = request.action === 'connect' && expected.walletReapprovalRequired === true
       ? walletRepairReason(expected.connection?.state) : undefined;
     const cancelled = new Promise<void>((resolve, reject) => {
       this.cancelConnect = (reason) => {
@@ -174,24 +188,31 @@ export class ConnectionController {
         // session. Retired flows must not publish repair state or run guards.
         this.assertWorkflowCurrent(generation);
         expected = this.client.getSnapshot();
-        this.update({ repairReason: expected.walletReapprovalRequired === true
+        this.update({ repairReason: request.action === 'connect' && expected.walletReapprovalRequired === true
           ? walletRepairReason(expected.connection?.state) : undefined });
       }
       this.assertWorkflowCurrent(generation, expected);
-      await policy.beforeConnect?.({ snapshot: expected, options });
+      await policy.beforeConnect?.({ ...request, snapshot: expected });
       this.assertWorkflowCurrent(generation, expected);
-      let nativeOptions: NativeConnectOptions | undefined = options;
-      if (options?.wallet !== undefined) {
-        if (options.connectHandler !== undefined) throw new TypeError('Choose wallet options or a connectHandler, not both.');
-        const { wallet, ...rest } = options;
-        // Per-call wallet choice keeps the app identity configured by the provider.
-        const handler = createWalletConnectHandler({ ...this.walletDefaults, ...wallet });
-        nativeOptions = { ...rest, connectHandler: handler };
+      let nativeOptions: NativeConnectOptions | undefined;
+      if (request.action === 'connect') {
+        const options = request.options;
+        nativeOptions = options;
+        if (options?.wallet !== undefined) {
+          if (options.connectHandler !== undefined) throw new TypeError('Choose wallet options or a connectHandler, not both.');
+          const { wallet, ...rest } = options;
+          // Per-call wallet choice keeps the app identity configured by the provider.
+          nativeOptions = { ...rest, connectHandler: BrowserConnectHandler({ ...this.walletDefaults, ...wallet }) };
+        }
       }
       // Once native work starts, cancellation must preserve its original outcome.
       this.cancelConnect = undefined;
-      const result = nativeOptions === undefined ? await this.client.connect() : await this.client.connect(nativeOptions);
-      if (result.error !== undefined && result.walletReapprovalRequired !== true && !isConnectDeniedError(result.error)) {
+      const result = request.action === 'connectVault'
+        ? await this.client.connectVault(request.options)
+        : await this.client.connect(nativeOptions);
+      // Vault failures remain actionable even if a prior wallet needs reapproval.
+      if (result.error !== undefined && (request.action === 'connectVault'
+        || (result.walletReapprovalRequired !== true && !isConnectDeniedError(result.error)))) {
         throw result.error;
       }
     });

@@ -1,7 +1,10 @@
-import type { TypedMaterializedRecord, TypedRecord } from '@enbox/browser';
-import type { RecordsOptions, RecordsResult } from '@enbox/react';
+import type { ConnectionSnapshot, TypedMaterializedRecord, TypedRecord, VaultConnectOptions as NativeVaultConnectOptions } from '@enbox/browser';
+import type { BeforeConnect, RecordsOptions, RecordsResult, VaultConnectOptions } from '@enbox/react';
 
-import { EnboxProvider, useContextView, useEnboxConnection, useEnboxMutation, useProfile, useProfiles, useProtocol, useRecords } from '@enbox/react';
+import {
+  EnboxProvider, useConnectionActions, useContextView, useEnboxConnection, useEnboxMutation,
+  useProfile, useProfiles, useProtocol, useRecords,
+} from '@enbox/react';
 import { createContextStore, createEnboxClient, createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '@enbox/react/config';
 
 type Note = { title: string };
@@ -17,6 +20,24 @@ const protocol = defineProtocol({
 } as const, { folder: recordCodecs.json<Folder>(), note: recordCodecs.json<Note>() });
 const application = defineApplicationManifest({ protocols: [protocol] });
 const client = createEnboxClient({ application, wallet: { appName: 'Notes' } });
+const vaultOptions: VaultConnectOptions = { password: 'test-only', createIdentity: true, metadata: { name: 'Local' } };
+const nativeVaultOptions: NativeVaultConnectOptions = vaultOptions;
+const publicVaultOptions: VaultConnectOptions = nativeVaultOptions;
+const beforeConnect: BeforeConnect = (context) => {
+  const snapshot: ConnectionSnapshot = context.snapshot;
+  void snapshot;
+  if (context.action === 'connectVault') {
+    const create: boolean | undefined = context.options?.createIdentity;
+    void create;
+    // @ts-expect-error vault guards expose native vault options, not wallet handler options
+    context.options?.wallet;
+  } else {
+    const name: string | undefined = context.options?.wallet?.appName;
+    void name;
+    const create: undefined = context.options?.createIdentity;
+    void create;
+  }
+};
 const shared = createRecordStore(async (signal) => client.getSnapshot().enbox!
   .using(protocol).records.observe('folder/note', {
     within: 'parent', materialize: true, pagination: { limit: 10 }, signal,
@@ -25,6 +46,17 @@ const shared = createRecordStore(async (signal) => client.getSnapshot().enbox!
 export function Contract(): React.ReactNode {
   const bound = useProtocol(protocol);
   const connection = useEnboxConnection();
+  const nativeActions = useConnectionActions();
+  const vault: Promise<void> = connection.connectVault(publicVaultOptions);
+  const nativeVault: Promise<ConnectionSnapshot> = nativeActions.connectVault(nativeVaultOptions);
+  void vault;
+  void nativeVault;
+  // @ts-expect-error vault connections do not accept wallet UI options
+  connection.connectVault({ wallet: { appName: 'Notes' } });
+  // @ts-expect-error native vault actions do not accept a wallet connect handler
+  nativeActions.connectVault({ connectHandler: { requestAccess: async () => undefined } });
+  // @ts-expect-error local vault creation is explicit, not a wallet connect option
+  connection.connect({ createIdentity: true });
   const profileName: string | undefined = useProfile(connection.enbox, connection.did).displayName;
   const profile = useProfile(connection.enbox, connection.did, { images: 'lazy' });
   const status: 'idle' | 'loading' | 'settled' | 'not-found' | 'error' = profile.status;
@@ -90,7 +122,7 @@ export function Contract(): React.ReactNode {
   bound?.records.create('folder/note', { parentContextId: 'parent', data: { name: 'bad' } });
   // @ts-expect-error signal ownership remains with the hook
   useRecords(protocol, 'folder', { pagination: { limit: 1 }, signal: new AbortController().signal });
-  return <EnboxProvider client={client}>{title}</EnboxProvider>;
+  return <EnboxProvider client={client} beforeConnect={beforeConnect}>{title}</EnboxProvider>;
 }
 
 export function OwnedContract(): React.ReactNode {

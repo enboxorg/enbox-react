@@ -12,7 +12,7 @@ changes.
 
 | Suite | Verifies |
 | --- | --- |
-| Connection | Provider borrowing, initialization, stable actions, selective rerenders, custom equality, and selector changes. |
+| Connection | Provider borrowing, initialization, guarded wallet/vault actions, shared progress, stable native actions, selective rerenders, custom equality, and selector changes. |
 | Observable store | Borrowed subscription ownership, store replacement, fallback values, receiver binding, and changes during subscription attachment. |
 | Record views | Opening/retry failures, cleanup, late completions, subscription gaps, pagination, reentrant controls, disabled views, Strict Mode, and Activity. |
 | Records | Query-value identity, materialization controls, disabling, client replacement, and immediate session guards. |
@@ -69,8 +69,8 @@ checks exercise the generated app and its worker. A separate development-only
 fixture tests the actual SDK provider/hooks against a controlled native client
 for connection, profile fallback, observed emoji writes, error retries, and
 disconnect during pending work. The fixture is absent from generated projects
-and production builds. Wallet approval and delegated remote replication need
-separate integration runs.
+and production builds. Wallet approval, vault password/recovery UI, and
+delegated remote replication need separate application integration runs.
 Plain SSR is covered; a framework-specific server-component application is
 not part of the automated fixtures. Offline testing verifies the application
 shell, not a remote write queue or shared-context editing behavior.
@@ -90,8 +90,10 @@ Shared-store regressions exercise one native view across React and headless
 consumers, readiness cancellation, late opening, owner abort, and async close.
 Mutation tests cover caller guards after session replacement.
 
-Connection workflows cover shared guard progress, preserving a session on a
-failed drain, cancellation before approval, and replacement identity checks.
+Connection workflows cover shared wallet/vault guard progress, preserving a
+session on a failed drain, cancellation before native work, and replacement
+identity checks. Type contracts cover action-specific guard options and native
+vault inputs.
 Configured-provider tests cover Strict Mode disposal and Activity recreation.
 Profile tests cover native reader sharing, Blob lease reuse, late settlement,
 source replacement, disabled reads, and callbacks from retired watch generations.

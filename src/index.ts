@@ -16,6 +16,7 @@ export {
   useSyncStatus,
 } from './hooks/connection.js';
 export type { ConnectionActions, ConnectionSelector, EqualityFn } from './hooks/connection.js';
+export type { VaultConnectOptions } from '@enbox/browser';
 export { useObservableStore } from './hooks/observable-store.js';
 export type { ObservableStoreSource } from './hooks/observable-store.js';
 export type {

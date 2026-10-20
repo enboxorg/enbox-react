@@ -61,6 +61,7 @@ export type ConnectionActions = Pick<
   ConnectionStore,
   | 'initialize'
   | 'connect'
+  | 'connectVault'
   | 'refresh'
   | 'disconnect'
   | 'refreshDwnEndpoints'
@@ -73,6 +74,7 @@ export function useConnectionActions(): ConnectionActions {
   return useMemo(() => Object.freeze({
     initialize: client.initialize.bind(client),
     connect: client.connect.bind(client),
+    connectVault: client.connectVault.bind(client),
     refresh: client.refresh.bind(client),
     disconnect: client.disconnect.bind(client),
     refreshDwnEndpoints: client.refreshDwnEndpoints.bind(client),

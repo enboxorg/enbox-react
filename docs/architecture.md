@@ -51,11 +51,19 @@ native `contexts` state without adding record-only freshness or pagination.
 ## Connection bindings
 
 `useEnboxConnection` combines native snapshots with a provider-scoped workflow
-controller. It derives usable-session flags, labels, wallet repair, and progress
-shared by all consumers. Before-action guards run outside native authentication.
-They are followed by a facade/session check, so delayed guards cannot sign out
-or replace another identity. Disconnect also supersedes a connect waiting on a
-guard. Raw snapshot hooks retain their native contracts.
+controller. Wallet `connect`, local `connectVault`, and `disconnect` use this
+same workflow, including usable-session flags, errors, and shared progress.
+The connect methods share one pending operation. `beforeConnect` receives an
+action-discriminated context with the matching options and the current native
+snapshot. Guards run outside native authentication and are followed by a
+facade/session check, so delayed guards cannot sign out or replace another
+identity. Disconnect also supersedes either connect method waiting on a guard.
+
+`useConnection` exposes native session and recovery data. Password acquisition
+and recovery-phrase UI stay application-owned. The advanced
+`useConnectionActions` hook binds native methods, including `connectVault`,
+without the provider's application guards or presentation workflow; their raw
+snapshot outcomes retain the native contract.
 
 Subscription cleanup detaches its own handle before calling native cleanup,
 which can synchronously subscribe again. Mutation cleanup also retires its old
