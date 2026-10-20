@@ -166,6 +166,8 @@ describe('session-bound mutations', () => {
   it('keeps a replacement subscription active when native cleanup resubscribes synchronously', async () => {
     const initial = connected();
     const { client, listeners } = controlledClient(initial);
+    const write = deferred<string>();
+    let pending!: Promise<string>;
     let observer!: EnboxMutationObserver<void>;
     let releaseReplacement = (): void => {};
     let replaceOnCleanup = true;
@@ -178,6 +180,7 @@ describe('session-bound mutations', () => {
           if (replaceOnCleanup) {
             replaceOnCleanup = false;
             releaseReplacement = observer.subscribe(() => {});
+            pending = observer.run(async () => write.promise, undefined);
           }
         };
       },
@@ -188,8 +191,14 @@ describe('session-bound mutations', () => {
       release();
       expect(observer.isCurrent()).toBe(true);
       expect(listeners.size).toBe(1);
-      await expect(observer.run(async () => 'saved', undefined)).resolves.toBe('saved');
+      expect(observer.getSnapshot().pendingCount).toBe(1);
+      expect(observer.getSnapshot().pendingVariables).toEqual([undefined]);
+      write.resolve('saved');
+      await expect(pending).resolves.toBe('saved');
+      expect(observer.getSnapshot().pendingCount).toBe(0);
     } finally {
+      write.resolve('saved');
+      await pending;
       release();
       releaseReplacement();
     }

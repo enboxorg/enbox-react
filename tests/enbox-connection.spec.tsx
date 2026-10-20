@@ -1,3 +1,4 @@
+import type { ConnectionSnapshot } from '@enbox/browser';
 import type { PropsWithChildren } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,6 +8,45 @@ import { connected, controlledClient, deferred, facade } from './helpers.js';
 import { ConnectDeniedError } from '@enbox/browser';
 
 describe('dapp connection workflow', () => {
+  it.each([false, true])('releases a reentrant replacement subscription (cleanup throws: %s)', (throws) => {
+    const { client, listeners } = controlledClient();
+    const failure = new Error('unsubscribe failed');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let controller!: ConnectionController;
+    let releaseReplacement = (): void => {};
+    let replaceOnCleanup = true;
+    const store = {
+      ...client,
+      subscribe: (notify: (snapshot: ConnectionSnapshot) => void) => {
+        const unsubscribe = client.subscribe(notify);
+        return () => {
+          unsubscribe();
+          if (replaceOnCleanup) {
+            replaceOnCleanup = false;
+            releaseReplacement = controller.subscribe(() => {});
+            if (throws) throw failure;
+          }
+        };
+      },
+    };
+    controller = new ConnectionController(store);
+    const release = controller.subscribe(() => {});
+    try {
+      expect(release).not.toThrow();
+      expect(listeners.size).toBe(1);
+      release();
+      expect(listeners.size).toBe(1);
+      releaseReplacement();
+      expect(listeners.size).toBe(0);
+      if (throws) expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Resource cleanup failed.', failure);
+      else expect(warn).not.toHaveBeenCalled();
+    } finally {
+      releaseReplacement();
+      release();
+      warn.mockRestore();
+    }
+  });
+
   it('requires a live lease after its first retain while allowing deferred cleanup to be reclaimed', async () => {
     const { client } = controlledClient();
     const controller = new ConnectionController(client);

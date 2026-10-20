@@ -1,0 +1,110 @@
+import type { ConnectionSnapshot, ConnectionStore, Enbox, RecordView, RecordViewState } from '@enbox/browser';
+import { AuthSession, ConnectDeniedError } from '@enbox/browser';
+import { EnboxProvider } from '@enbox/react';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from '../src/App.js';
+import type { Choice } from '../src/demo/protocol.js';
+import '../src/style.css';
+
+// Control only the native boundary. The starter uses the actual React SDK.
+const parameters = new URLSearchParams(location.search);
+type Row = { record: { id: string }; value: Choice };
+const views = new Set<FixtureView>();
+let choice: Choice | undefined;
+let failRead = parameters.has('read-error');
+let failWrite = parameters.has('write-error');
+let finishSave: (() => void) | undefined;
+let needsRepair = parameters.has('repair');
+
+function currentRows(): Row[] {
+  return choice === undefined ? [] : [{ record: { id: 'choice' }, value: choice }];
+}
+
+class FixtureView implements RecordView<Row> {
+  private state: Extract<RecordViewState<Row>, { status: 'ready' }> = {
+    status: 'ready', records: currentRows(), hasMore: false, current: true,
+  };
+  private readonly listeners = new Set<(state: RecordViewState<Row>) => void>();
+
+  public getSnapshot(): RecordViewState<Row> { return this.state; }
+  public subscribe(listener: (state: RecordViewState<Row>) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+  public async ready(): Promise<typeof this.state> { return this.state; }
+  public async close(): Promise<void> { this.listeners.clear(); views.delete(this); }
+  public publish(): void {
+    this.state = { ...this.state, records: currentRows() };
+    for (const listener of this.listeners) listener(this.state);
+  }
+}
+
+const enbox = {
+  dwn: { records: {
+    query: async () => ({ status: { code: 200 }, records: parameters.has('missing-profile') ? [] : [{
+      data: {
+        json: async () => ({ displayName: 'Alice Example', bio: 'A profile supplied by the browser fixture.' }),
+        blob: async () => new Blob(),
+      },
+    }] }),
+    read: async () => ({ status: { code: 404 } }),
+  } },
+  using: () => ({ records: {
+    observe: async () => {
+      if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
+      const view = new FixtureView();
+      views.add(view);
+      return view;
+    },
+    set: async (_path: string, request: { data: Choice }) => {
+      if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
+      if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
+      choice = request.data;
+      for (const view of views) view.publish();
+      return { id: 'choice' };
+    },
+  } }),
+} as unknown as Enbox;
+
+let snapshot: ConnectionSnapshot = { phase: 'initializing' };
+const listeners = new Set<(state: ConnectionSnapshot) => void>();
+let sessionLifetime: AbortController | undefined;
+function publish(next: ConnectionSnapshot): ConnectionSnapshot {
+  snapshot = Object.freeze(next);
+  for (const listener of listeners) listener(snapshot);
+  return snapshot;
+}
+
+const client = {
+  getSnapshot: () => snapshot,
+  subscribe: (listener: (state: ConnectionSnapshot) => void) => {
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  },
+  initialize: async () => snapshot.phase === 'initializing' ? publish({ phase: 'disconnected' }) : snapshot,
+  connect: async () => {
+    if (parameters.has('deny')) return publish({ phase: 'disconnected', error: new ConnectDeniedError() });
+    sessionLifetime = new AbortController();
+    const did = 'did:example:alice';
+    const session = new AuthSession({
+      agent: {} as AuthSession['agent'], did, signal: sessionLifetime.signal,
+      identity: { didUri: did, name: 'Alice' },
+    });
+    const walletReapprovalRequired = needsRepair;
+    needsRepair = false;
+    return publish({ phase: 'connected', enbox, session, walletReapprovalRequired });
+  },
+  disconnect: async () => { sessionLifetime?.abort(); return publish({ phase: 'disconnected' }); },
+  connectVault: async () => snapshot,
+  refresh: async () => snapshot,
+  refreshDwnEndpoints: async () => snapshot,
+  retryRemote: async () => snapshot,
+  dispose: async () => { sessionLifetime?.abort(); },
+} satisfies ConnectionStore;
+
+Object.assign(window, { __starterFixture: { finishSave: () => finishSave?.() } });
+createRoot(document.getElementById('root')!).render(
+  <StrictMode><EnboxProvider client={client}><App /></EnboxProvider></StrictMode>,
+);
