@@ -64,6 +64,7 @@ Root development dependencies support only SDK compilation and tests.
 | Development dependencies | Use |
 | --- | --- |
 | `@enbox/api` | Native DWN integration fixtures through `@enbox/api/testing`. |
+| `@enbox/browser` | Compile and test against the exact browser SDK declared as a peer. |
 | `vitest`, `@testing-library/react`, `@testing-library/dom`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
 | `@playwright/test` | Production browser tests. |
 | `typescript`, `@types/react`, `@types/use-sync-external-store` | Compilation, declarations, and type contracts. |
@@ -108,8 +109,14 @@ node --input-type=module -e "import { packSdk } from './scripts/pack-sdk.mjs'; p
 bun install --cwd tests/compatibility/starter --lockfile-only --ignore-scripts --force
 ```
 
-`--force` refreshes the local archive metadata. Review the lockfile diff and
+`--force` requests fresh registry data. Review the lockfile diff and
 accept registry version changes only when intended.
+
+When the SDK's dependencies or peers change, Bun can retain the previous
+metadata at a reused archive path despite `--force`. Refresh that entry using
+the immutable archive returned by `packSdk`, then restore the fixture's stable
+archive placeholder. The consumer checks compare this metadata with the SDK
+before installing.
 
 For an intentional dependency change, edit the exact version in
 `package.json`, temporarily set `install.frozenLockfile = false` in

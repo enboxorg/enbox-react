@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@enbox/browser": "0.3.79",
+    "@enbox/browser": "0.3.80",
     "@enbox/react": "file:../../../.artifacts/enbox-react.tgz",
     "react": "19.3.0",
     "react-dom": "19.3.0"

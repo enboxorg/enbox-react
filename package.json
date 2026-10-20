@@ -1,6 +1,6 @@
 {
   "name": "@enbox/react",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "React bindings for Enbox wallet connections and typed live records",
   "type": "module",
   "license": "Apache-2.0",
@@ -34,14 +34,15 @@
     "test:react18": "bun run build && node scripts/test-react18.mjs"
   },
   "peerDependencies": {
-    "@enbox/browser": "0.3.79",
+    "@enbox/browser": "0.3.80",
     "react": "18.3.1 || 19.3.0"
   },
   "dependencies": {
     "use-sync-external-store": "1.7.0"
   },
   "devDependencies": {
-    "@enbox/api": "0.6.87",
+    "@enbox/api": "0.6.88",
+    "@enbox/browser": "0.3.80",
     "@playwright/test": "1.58.2",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
