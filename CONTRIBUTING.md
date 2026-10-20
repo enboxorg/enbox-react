@@ -126,6 +126,12 @@ manifest and lockfile together. Do not commit relaxed installation settings.
 
 ## Preview publication
 
+When React work needs native SDK changes, complete the known native changes
+as one batch and validate the combined SDKs with local packages before
+requesting publication. Then pin the actual supporting releases in React and
+refresh its locked consumers. Publishing native packages should not be a
+prerequisite for testing intermediate changes.
+
 Set a new exact package version before each release. The manual
 `Publish preview` GitHub workflow runs only on `main`. It verifies both
 React versions and the production starter, then publishes the same
