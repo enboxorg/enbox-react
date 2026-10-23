@@ -1,6 +1,6 @@
 # Testing
 
-Run `bun run check` for the library, type contracts, configuration files, and
+Run `bun run check` for the dependency audit, library, type contracts, configuration files, and
 built-package tests. Run `bun run test:react18` to validate the installed
 archive with React 18.3.1; the authoring suite uses React 19.3.0. Run
 `bun run test:generator` for the CLI and `bun run test:browser` for a freshly
@@ -49,6 +49,11 @@ Expected cleanup diagnostics should be asserted; unexpected rejected Promises
 must fail the test run.
 
 ## Public package checks
+
+Root checks audit all locked runtime and development dependencies. React 18
+and candidate starter checks audit their own frozen dependency graphs; the
+shipped starter also passes npm audit before its production build. No advisory
+severity is excluded.
 
 `type-tests/contracts.tsx` resolves `@enbox/react` through `package.json`
 exports and the built declarations. Invalid calls use `@ts-expect-error`, so

@@ -1,5 +1,9 @@
 {
   "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "skipLibCheck": false,
+    "types": ["node", "react"]
+  },
   "include": [
     "generated/tests/*.ts",
     "generated/tests/*.tsx",

@@ -58,4 +58,5 @@ import { expect, it } from 'vitest';
 it('runs against React 18.3.1', () => { expect(version).toBe('18.3.1'); });
 `);
 execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: consumer, stdio: 'inherit' });
+execFileSync('bun', ['audit'], { cwd: consumer, stdio: 'inherit' });
 execFileSync('bun', ['run', 'check'], { cwd: consumer, stdio: 'inherit' });

@@ -1,5 +1,5 @@
 import type {
-  BlobUrlLease, Enbox, ProfileEntryStatus, ProfileFieldSnapshot,
+  BlobUrlLease, ProfileEntryStatus, ProfileFieldSnapshot,
   ProfileReader, ProfileReaderImagesMode, ProfileReaderSource, ProfileSnapshot,
 } from '@enbox/browser';
 import { createBlobUrlPool, createProfileReader } from '@enbox/browser';
@@ -10,7 +10,7 @@ export type ResolvedProfile = Readonly<NonNullable<ProfileSnapshot['profile']['v
   avatarUrl?: string;
   heroUrl?: string;
 }>;
-export type ProfileSource = ProfileReaderSource | Enbox;
+export type ProfileSource = ProfileReaderSource;
 export type ProfileOptions = Readonly<{
   enabled?: boolean;
   /** Eager preserves the convenience default; lazy waits for loadImages(). */
@@ -58,9 +58,7 @@ class SharedProfileReader {
   ) {}
 
   public retain(): { reader: ProfileReader; release: () => void } {
-    // The native reader accepts Enbox's records surface at runtime; its older
-    // optional record metadata declarations differ under exact optional types.
-    const reader = this.reader ??= createProfileReader(this.source as ProfileReaderSource, { images: this.policy });
+    const reader = this.reader ??= createProfileReader(this.source, { images: this.policy });
     this.references += 1;
     this.generation += 1;
     let released = false;
