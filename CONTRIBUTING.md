@@ -137,8 +137,9 @@ Set a new exact package version before each release. The manual
 `Publish preview` GitHub workflow runs only on `main`. It verifies both
 React versions and the production starter, then publishes the same
 archive used by the React 18 consumer checks to the `next` npm tag with
-provenance. Configure `NPM_TOKEN` in the repository's Actions secrets with
-publish access to `@enbox/react`.
+provenance. Configure npm trusted publishing for `@enbox/react` using this
+repository and `publish.yml`, or provide an `NPM_TOKEN` Actions secret with
+publish access. npm handles authentication directly.
 
 Dispatch the workflow after merging the release change:
 
@@ -149,5 +150,7 @@ gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
 The generator is a separate npm package, `@enbox/create-dapp`. After approval,
 dispatch `publish-create-dapp.yml` on `main`. It runs SDK and generator checks,
 verifies the generated app, and publishes that tested generator archive to
-`latest` with provenance. `NPM_TOKEN` needs access to this package too. Merging
-changes does not publish either package automatically.
+`latest` with provenance. Configure its npm trusted publisher with
+`publish-create-dapp.yml`, or give `NPM_TOKEN` access to this package too. A
+package's first publication can use the token before its trusted publisher is
+configured. Merging changes does not publish either package automatically.

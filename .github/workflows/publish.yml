@@ -37,10 +37,4 @@ jobs:
       - name: Publish the tested archive
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo 'NPM_TOKEN must be configured with publish access to @enbox/react.' >&2
-            exit 1
-          fi
-          npm whoami --registry=https://registry.npmjs.org
-          npm publish .artifacts/enbox-react.tgz --access public --tag next --provenance
+        run: npm publish .artifacts/enbox-react.tgz --access public --tag next --provenance

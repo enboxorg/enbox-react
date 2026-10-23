@@ -36,9 +36,4 @@ jobs:
       - name: Publish the tested generator archive
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo 'NPM_TOKEN must have publish access to @enbox/create-dapp.' >&2
-            exit 1
-          fi
-          npm publish .artifacts/create-dapp.tgz --access public --tag latest --provenance
+        run: npm publish .artifacts/create-dapp.tgz --access public --tag latest --provenance
