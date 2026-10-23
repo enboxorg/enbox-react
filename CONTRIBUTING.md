@@ -16,7 +16,8 @@ packed SDK instead.
 | `bun run test` | Run unit, React, and native local DWN tests. |
 | `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
-| `bun run check` | Run type checks, unit/integration tests, and package checks. |
+| `bun run audit` | Audit all locked runtime and development dependencies; every advisory fails the check. |
+| `bun run check` | Run the dependency audit, type checks, unit/integration tests, and package checks. |
 | `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
 | `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
 | `bun run starter:dev` | Install the canonical starter's frozen npm dependencies and serve it with Vite. |

@@ -28,20 +28,21 @@
     "test:package": "bun run build && node --test --test-isolation=none tests/package/*.test.mjs",
     "test:browser": "bun run build && node scripts/test-starter.mjs",
     "test:generator": "node --test packages/create-dapp/tests/*.test.mjs",
-    "check": "bun run typecheck && bun run test && node --test --test-isolation=none tests/package/*.test.mjs && bun run test:generator",
+    "audit": "bun audit",
+    "check": "bun run audit && bun run typecheck && bun run test && node --test --test-isolation=none tests/package/*.test.mjs && bun run test:generator",
     "starter:dev": "npm --prefix packages/create-dapp/template ci --no-audit --no-fund && npm --prefix packages/create-dapp/template run dev",
     "prepack": "bun run build",
     "test:react18": "bun run build && node scripts/test-react18.mjs"
   },
   "peerDependencies": {
-    "@enbox/browser": "0.3.79",
+    "@enbox/browser": "0.3.82",
     "react": "18.3.1 || 19.3.0"
   },
   "dependencies": {
     "use-sync-external-store": "1.7.0"
   },
   "devDependencies": {
-    "@enbox/api": "0.6.87",
+    "@enbox/api": "0.6.89",
     "@playwright/test": "1.58.2",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
@@ -52,7 +53,7 @@
     "jsdom": "26.1.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "publishConfig": {
     "access": "public",

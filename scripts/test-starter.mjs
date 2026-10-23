@@ -96,12 +96,14 @@ try {
   };
   // First verify exactly what the published generator installs.
   execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: project, env: environment, stdio: 'inherit' });
+  execFileSync('npm', ['audit', '--audit-level=low'], { cwd: project, env: environment, stdio: 'inherit' });
   execFileSync('npm', ['run', 'build'], { cwd: project, env: environment, stdio: 'inherit' });
   assert.deepEqual(readJson(join(project, 'package-lock.json')), lock, 'The shipped starter lockfile must remain unchanged.');
 
   const sdk = readJson(join(root, 'package.json'));
   const patchedLock = usePackedSdk(project, packedSdk, sdk);
   execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: project, env: environment, stdio: 'inherit' });
+  execFileSync('bun', ['audit'], { cwd: project, env: environment, stdio: 'inherit' });
   assert.equal(readFileSync(join(project, 'bun.lock'), 'utf8'), patchedLock, 'Bun must leave the candidate lockfile unchanged.');
   assert.equal(readJson(join(project, 'node_modules/@enbox/react/package.json')).version, sdk.version);
   execFileSync('npm', ['run', 'build'], { cwd: project, env: environment, stdio: 'inherit' });
