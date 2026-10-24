@@ -1,28 +1,26 @@
 import { defineProtocol, recordCodecs } from '@enbox/react/config';
-import type { RecordValidator } from '@enbox/react/config';
 
 import app from '../app.json' with { type: 'json' };
 
-export const CHOICES = [
-  { emoji: '🌱', label: 'Grow' },
-  { emoji: '✨', label: 'Spark' },
-  { emoji: '🚀', label: 'Explore' },
-] as const;
-
-export type ChoiceEmoji = typeof CHOICES[number]['emoji'];
-export type Choice = { emoji: ChoiceEmoji };
-
-const validateChoice: RecordValidator = (value: unknown): boolean =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-  && 'emoji' in value && CHOICES.some(({ emoji }) => emoji === value.emoji);
+export type Project = { name: string };
+export type Task = { title: string; completed: boolean };
 
 // Replace this example URI with one you own before publishing your app.
 // Keep it stable after launch: it identifies the app's saved data and grants.
-export const DemoProtocol = defineProtocol({
-  protocol: `https://example.com/${encodeURIComponent(app.id)}/demo/v1`,
+export const TaskBoardProtocol = defineProtocol({
+  protocol: `https://example.com/${encodeURIComponent(app.id)}/demo/v2`,
   published: false,
   types: {
-    choice: { dataFormats: ['application/json'], encryptionRequired: true },
+    project: { dataFormats: ['application/json'], encryptionRequired: true },
+    task: { dataFormats: ['application/json'], encryptionRequired: true },
   },
-  structure: { choice: { $recordLimit: { max: 1 } } },
-} as const, { choice: recordCodecs.json<Choice>({ validator: validateChoice }) });
+  structure: { project: { task: {} } },
+} as const, {
+  project: recordCodecs.json<Project>({ validator: (value: unknown) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) && 'name' in value
+    && typeof value.name === 'string' && value.name.trim().length > 0 && value.name.length <= 60 }),
+  task: recordCodecs.json<Task>({ validator: (value: unknown) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) && 'title' in value && 'completed' in value
+    && typeof value.title === 'string' && value.title.trim().length > 0 && value.title.length <= 120
+    && typeof value.completed === 'boolean' }),
+});

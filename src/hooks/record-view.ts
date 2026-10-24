@@ -27,7 +27,8 @@ export function useRecordViewBinding<Item>(
 }
 
 /** Own a view from a memoized opener, borrow a supplied store, or disable with null. */
-export function useRecordView<Store extends RecordStore<unknown>>(store: Store): ReturnType<Store['getSnapshot']>;
+export function useRecordView<Store extends RecordStore<unknown>>(store: Store):
+  ReturnType<Store['getSnapshot']> | ReturnType<Store['getServerSnapshot']>;
 export function useRecordView<Item>(opener: RecordViewOpener<Item> | RecordStore<Item> | null): RecordViewResult<Item>;
 export function useRecordView<Item>(opener: RecordViewOpener<Item> | RecordStore<Item> | null): RecordViewResult<Item> {
   return useRecordViewBinding(opener).snapshot;

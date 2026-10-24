@@ -5,9 +5,10 @@
 Use the Node and Bun versions in `.node-version` and `.bun-version`.
 Install dependencies with `bun install --frozen-lockfile`. Dependency versions
 and the allowed peer releases are fixed. `bunfig.toml` disables automatic
-runtime installation. The standalone starter has its own npm lockfile and
-uses published SDK exports. Its isolated browser check installs the current
-packed SDK instead.
+runtime installation. The standalone starter ships no lockfile and uses
+published SDK exports. Its isolated browser check installs the current packed
+SDK instead. `starter:dev` also uses the local SDK archive without changing
+the template manifest or generating a template lockfile.
 
 | Command | Purpose |
 | --- | --- |
@@ -20,7 +21,7 @@ packed SDK instead.
 | `bun run check` | Run the dependency audit, type checks, unit/integration tests, and package checks. |
 | `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
 | `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
-| `bun run starter:dev` | Install the canonical starter's frozen npm dependencies and serve it with Vite. |
+| `bun run starter:dev` | Build/install the local packed SDK and serve the canonical starter with Vite. |
 
 Install Chromium with `bunx --no-install playwright install chromium` before
 running browser tests if it is not available. See [testing](docs/testing.md)
@@ -73,9 +74,10 @@ Root development dependencies support only SDK compilation and tests.
 | `@types/node` | Node APIs in tests and tooling configuration. |
 
 The single starter source lives in `packages/create-dapp/template`. Keep its
-configuration independent of the repository root. Its manifest and npm lock
-must change together when updating dependencies. The generator customizes JSON
-metadata only; its published archive includes this same template.
+configuration independent of the repository root. Its exact dependency manifest
+defines each new app; the user creates and commits their package manager’s
+lockfile on first install. The generator customizes JSON metadata only; its
+published archive includes this same template.
 The starter owns its Vite, React Fast Refresh, TypeScript, and type dependencies.
 Vite bundles the application worker; a scoped cache provides the offline shell.
 The generator itself has no dependencies. Add packages where they are used,
@@ -92,32 +94,12 @@ Exact pins make updates deliberate, but do not establish that a release is
 safe or automatically bring in security fixes. Review dependency updates and
 their lockfile changes, including advisories, before accepting them.
 
-`test:browser` creates a temporary project outside the repository. It first
-checks the shipped npm dependency tree, then installs the packed SDK with the
-separately locked dependencies in `tests/compatibility/starter`. That fixture
-lets SDK dependencies change before their release without changing the shipped
-starter's published SDK pin. Both registry trees remain frozen; only the local
-SDK archive path and integrity are refreshed. App source comes from the same
-packed template. Test fixtures are added after its production build and are
-never generated for users.
-
-After changing the candidate fixture's exact dependency versions, build and pack
-the SDK before regenerating its lockfile:
-
-```sh
-bun run build
-node --input-type=module -e "import { packSdk } from './scripts/pack-sdk.mjs'; packSdk(process.cwd())"
-bun install --cwd tests/compatibility/starter --lockfile-only --ignore-scripts --force
-```
-
-`--force` requests fresh registry data. Review the lockfile diff and
-accept registry version changes only when intended.
-
-When the SDK's dependencies or peers change, Bun can retain the previous
-metadata at a reused archive path despite `--force`. Refresh that entry using
-the immutable archive returned by `packSdk`, then restore the fixture's stable
-archive placeholder. The consumer checks compare this metadata with the SDK
-before installing.
+`test:browser` creates temporary npm and Bun projects outside the repository.
+It verifies that neither ships a lockfile, runs a fresh audited install and
+build for each, then repeats a frozen install against the newly generated lock.
+The app uses the current packed SDK so unpublished changes can be tested.
+Test fixtures are added only after the production build and are never generated
+for users. The separate React 18 consumer retains its committed frozen lockfile.
 
 For an intentional dependency change, edit the exact version in
 `package.json`, temporarily set `install.frozenLockfile = false` in
@@ -149,8 +131,13 @@ gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
 
 The generator is a separate npm package, `@enbox/create-dapp`. After approval,
 dispatch `publish-create-dapp.yml` on `main`. It runs SDK and generator checks,
-verifies the generated app, and publishes that tested generator archive to
+verifies the generated app against its actual published SDK pin, and publishes
+that tested generator archive to
 `latest` with provenance. Configure its npm trusted publisher with
 `publish-create-dapp.yml`, or give `NPM_TOKEN` access to this package too. A
 package's first publication can use the token before its trusted publisher is
 configured. Merging changes does not publish either package automatically.
+
+When a template needs a new React release, publish React first, wait for npm
+visibility, then dispatch the generator workflow. Its registry-only consumer
+check fails if the exact SDK pin is unavailable.

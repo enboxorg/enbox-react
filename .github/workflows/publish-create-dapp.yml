@@ -31,8 +31,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bunx --no-install playwright install --with-deps --only-shell chromium
-        timeout-minutes: 4
-      - run: bun run test:browser
+      - run: node scripts/test-starter.mjs
+        env:
+          ENBOX_STARTER_SDK_SOURCE: registry
       - name: Publish the tested generator archive
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

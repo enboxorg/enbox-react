@@ -13,6 +13,19 @@ function MutationContracts() {
   mutation.pendingVariables[0] = { recipient: 'bob' };
   // @ts-expect-error Variables retain the operation's input type.
   mutation.run({ recipient: 123 });
+  mutation.mutate({ recipient: 'alice' }, { onSuccess: (result, variables) => {
+    const name: string = result;
+    const recipient: string = variables.recipient;
+    void [name, recipient];
+    // @ts-expect-error success handlers preserve native result types
+    const invalid: number = result;
+    void invalid;
+  } });
+  // Success-handler results are ignored, including toast IDs and async values.
+  mutation.mutate({ recipient: 'alice' }, { onSuccess: (result) => result.length });
+  mutation.mutate({ recipient: 'alice' }, { onSuccess: async (result) => result.length });
+  // @ts-expect-error callback variables follow the mutation input
+  mutation.mutate({ recipient: 'alice' }, { onSuccess: (_result, variables: { recipient: number }) => {} });
   const noVariables = useEnboxMutation(async () => 42);
   const emptyInput: readonly void[] = noVariables.pendingVariables;
   const noInputIssued: Promise<number> = noVariables.run(undefined);

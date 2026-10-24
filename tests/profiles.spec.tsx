@@ -375,6 +375,35 @@ describe('public profile bindings', () => {
     expect(hook.result.current.displayName).toBeUndefined();
   });
 
+  it('keeps a replacement watch and image lease acquired during native cleanup', async () => {
+    const observer = new ProfilesObserver(source(), ['did:a']);
+    mocks.snapshots.set('did:a', profile('Alice', new Blob(['avatar'])));
+    let releaseReplacement = (): void => {};
+    mocks.watch.mockImplementationOnce((_dids, notify) => {
+      mocks.watchers.add(notify);
+      return () => {
+        mocks.watchers.delete(notify);
+        releaseReplacement = observer.subscribe(() => {});
+      };
+    });
+    const release = observer.subscribe(() => {});
+    const oldLoad = observer.getSnapshot().get('did:a')!.loadImages;
+    try {
+      release();
+      expect(observer.getSnapshot().get('did:a')?.displayName).toBe('Alice');
+      expect(mocks.watchers.size).toBe(1);
+      expect(mocks.acquire).toHaveBeenCalledTimes(2);
+      expect(mocks.releaseAfter).toHaveBeenCalledTimes(1);
+      await expect(oldLoad()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+      await observer.getSnapshot().get('did:a')!.loadImages();
+    } finally {
+      releaseReplacement();
+      await Promise.resolve();
+    }
+    expect(mocks.watchers.size).toBe(0);
+    expect(mocks.releaseAfter).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps reader lifetime through StrictMode replay and reacquires after actual retirement', async () => {
     const enbox = source();
     mocks.snapshots.set('did:a', profile('Alice'));

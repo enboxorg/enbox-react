@@ -72,7 +72,8 @@ resolution.
 The browser suite runs without approving a real wallet account. Production
 checks exercise the generated app and its worker. A separate development-only
 fixture tests the actual SDK provider/hooks against a controlled native client
-for connection, profile fallback, observed emoji writes, error retries, and
+for connection, profile fallback, project isolation, task creation, completion,
+reopening, renaming, deletion, error retries, and
 disconnect during pending work. The fixture is absent from generated projects
 and production builds. Wallet approval, vault password/recovery UI, and
 delegated remote replication need separate application integration runs.
@@ -80,14 +81,15 @@ Plain SSR is covered; a framework-specific server-component application is
 not part of the automated fixtures. Offline testing verifies the application
 shell, not a remote write queue or shared-context editing behavior.
 
-The shipped app uses its npm lockfile and published SDK. Candidate checks
-replace only dependency metadata with `tests/compatibility/starter` and install
-its frozen Bun lockfile. This keeps SDK dependency upgrades independent of the
-starter's next release without duplicating its source. The worker build check
-also adds an ordinary worker temporarily and verifies it cannot overwrite the
-application service worker.
-Package checks verify that both SDK consumer fixtures select supported peer
-versions: a frozen Bun installation can accept an incompatible peer version.
+The template ships no lockfiles. Candidate checks create independent npm and
+Bun apps, install the packed SDK, audit all dependencies, build each app, and
+verify a frozen reinstall against each newly created lockfile. Generator
+publication sets `ENBOX_STARTER_SDK_SOURCE=registry` so the same checks require
+the actual released SDK named in the template. The worker check adds an
+ordinary worker temporarily and verifies it cannot overwrite the service worker.
+The native protocol fixture verifies encrypted projects and task updates,
+completion/reopening, scoped selections under two projects, and reads by ID.
+Package checks verify supported peer releases in the frozen React 18 fixture.
 
 ## React compatibility
 
@@ -95,7 +97,12 @@ Shared-store regressions exercise one native view across React and headless
 consumers, explicit headless startup, readiness cancellation, late opening,
 owner abort, and async close. Native record and context integrations also
 start the public stores without subscriptions.
-Mutation tests cover caller guards after session replacement.
+Mutation tests cover success-handler inference, awaiting, failure propagation,
+per-invocation capture, and retirement, plus caller guards after session replacement and Activity
+resumption. Cleanup regressions preserve replacement record views, profile
+watches, and image leases installed synchronously during native teardown.
+The starter also retains a selected project when live updates move it beyond
+the current page.
 
 Connection workflows cover shared wallet/vault guard progress, preserving a
 session on a failed drain, cancellation before native work, and replacement
@@ -111,3 +118,7 @@ public type contracts; React Activity is exercised only by the React 19 suite.
 The generated consumer lives in `.artifacts`, and all registry dependencies
 are frozen by the fixture's committed lockfile. Only the local SDK archive
 checksum is refreshed as its source changes.
+
+Browser tests have a five-minute global timeout so Playwright can write failure
+reports before the CI job ends. Browser/system dependency provisioning shares
+the job's fifteen-minute budget, without an additional install-step cutoff.

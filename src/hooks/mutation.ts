@@ -15,9 +15,17 @@ export type EnboxMutationOptions = Readonly<{
   /** Changing this owner resets presentation without cancelling issued writes. */
   scope?: unknown;
 }>;
+export type EnboxMutationCallOptions<Variables, Result> = Readonly<{
+  /** Starts only in the invoking lifetime after native success. Awaited; failures enter error state. */
+  onSuccess?: (result: Result, variables: Variables) => unknown;
+}>;
 export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot<Variables> & Readonly<{
-  /** Issue work through this render's binding; each call keeps its own outcome. */
-  run: (variables: Variables) => Promise<Result>;
+  /** Compatibility alias for mutateAsync. */
+  run: (variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>) => Promise<Result>;
+  /** Event-handler action; failures remain visible in error. */
+  mutate: (variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>) => void;
+  /** Await the operation and optional success handler; failures reject with their original cause. */
+  mutateAsync: (variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>) => Promise<Result>;
   /** Clear the displayed error without cancelling writes or clearing pending work. */
   reset: () => void;
   /** Check before caller UI effects after an issued write finishes. */
@@ -42,11 +50,27 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
   );
   // The function captures this render's operation. No ref is changed during render.
   const run = useCallback(
-    (variables: Variables) => observer.run(operation, variables),
+    (variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>): Promise<Result> => {
+      if (options === undefined) return observer.run(operation, variables);
+      const isCurrent = observer.captureGuard();
+      return observer.run(async (enbox, input) => {
+        const onSuccess = options?.onSuccess;
+        if (onSuccess !== undefined && typeof onSuccess !== 'function') {
+          throw new TypeError('Enbox mutation onSuccess must be a function.');
+        }
+        const result = await operation(enbox, input);
+        if (onSuccess !== undefined && isCurrent()) await onSuccess(result, input);
+        return result;
+      }, variables);
+    },
     [observer, operation],
   );
+  const mutate = useCallback((variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>): void => {
+    // run() publishes operation and handler failures; event handlers need no empty catch.
+    void run(variables, options).catch(() => {});
+  }, [run]);
   return useMemo(
-    () => Object.freeze({ ...snapshot, run, reset: observer.reset, isCurrent: observer.isCurrent }),
-    [snapshot, run, observer],
+    () => Object.freeze({ ...snapshot, run, mutate, mutateAsync: run, reset: observer.reset, isCurrent: observer.captureGuard() }),
+    [snapshot, run, mutate, observer],
   );
 }
