@@ -1,97 +1,132 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { CHOICES } from './protocol.js';
-import { useNotes, useSpaceChoice, useSpaces } from './use-demo.js';
+import { useProjects, useTask, useTasks } from './use-demo.js';
 import './demo.css';
 
 export function Demo({ disabled = false }: { disabled?: boolean }) {
-  const spaces = useSpaces();
+  const projects = useProjects();
   const [selectedId, setSelectedId] = useState<string>();
   const [name, setName] = useState('');
-  const selected = spaces.records.find((space) => space.id === selectedId) ?? spaces.records[0];
-  async function addSpace(event: FormEvent) {
+  const selected = projects.records.find((project) => project.id === selectedId) ?? projects.records[0];
+  async function addProject(event: FormEvent) {
     event.preventDefault();
     try {
-      const record = await spaces.create.mutateAsync({ name: name.trim() });
-      if (spaces.create.isCurrent()) { setSelectedId(record.id); setName(''); }
+      const record = await projects.create.mutateAsync({ name: name.trim() });
+      if (projects.create.isCurrent()) { setSelectedId(record.id); setName(''); }
     } catch { /* The mutation's error is rendered below. */ }
   }
   return (
     <section className="panel demo" aria-labelledby="demo-title">
-      <h2 id="demo-title">Your spaces</h2>
-      <p>Create a space, add private notes, and give each space a little hello.</p>
-      <form className="demo-form" onSubmit={addSpace}>
-        <label htmlFor="space-name">Space name</label>
-        <input id="space-name" value={name} maxLength={60} required
-          disabled={disabled || spaces.create.isPending} onChange={(event) => setName(event.target.value)} />
-        <button className="button button-secondary" disabled={disabled || spaces.create.isPending || !name.trim()}>
-          {spaces.create.isPending ? 'Creating…' : 'Create space'}
+      <h2 id="demo-title">Your projects</h2>
+      <p>A private task board. Create a project, add tasks, and make a little progress.</p>
+      <form className="demo-form" onSubmit={addProject}>
+        <label htmlFor="project-name">Project name</label>
+        <input id="project-name" value={name} maxLength={60} required
+          disabled={disabled || projects.create.isPending} onChange={(event) => setName(event.target.value)} />
+        <button className="button button-secondary" disabled={disabled || projects.create.isPending || !name.trim()}>
+          {projects.create.isPending ? 'Creating…' : 'Create project'}
         </button>
       </form>
-      {spaces.create.error && <p role="alert">Couldn’t create the space: {spaces.create.error.message}</p>}
-      {spaces.status === 'error' && <div role="alert">
-        <p>Couldn’t load spaces: {spaces.error.message}</p>
-        <button type="button" disabled={disabled} onClick={() => spaces.retry()}>Try again</button>
+      {projects.create.error && <p role="alert">Couldn’t create the project: {projects.create.error.message}</p>}
+      {projects.status === 'error' && <div role="alert">
+        <p>Couldn’t load projects: {projects.error.message}</p>
+        <button type="button" disabled={disabled} onClick={() => projects.retry()}>Try again</button>
       </div>}
-      <div className="space-picker" aria-label="Spaces">
-        {spaces.records.map((space) => <button type="button" className="button button-quiet" key={space.id} disabled={disabled}
-          aria-pressed={space.id === selected?.id} onClick={() => setSelectedId(space.id)}>{space.data.name}</button>)}
+      <div className="project-picker" aria-label="Projects">
+        {projects.records.map((project) => <button type="button" className="button button-quiet" key={project.id} disabled={disabled}
+          aria-pressed={project.id === selected?.id} onClick={() => setSelectedId(project.id)}>{project.data.name}</button>)}
       </div>
-      {spaces.hasMore && <button type="button" disabled={disabled || spaces.isLoadingMore}
-        onClick={() => spaces.loadMore()}>More spaces</button>}
-      {selected?.contextId !== undefined
-        ? <SpaceContent key={selected.contextId} within={selected.contextId} disabled={disabled} />
-        : <p role="status">{spaces.isLoading ? 'Loading spaces…' : 'Create your first space to get started.'}</p>}
+      {projects.hasMore && <button type="button" disabled={disabled || projects.isLoadingMore}
+        onClick={() => projects.loadMore()}>More projects</button>}
+      {selected !== undefined
+        ? <ProjectTasks key={selected.contextId} within={selected.contextId} disabled={disabled} />
+        : <p role="status">{projects.isLoading ? 'Loading projects…' : 'Create your first project to get started.'}</p>}
     </section>
   );
 }
 
-function SpaceContent({ within, disabled }: { within: string; disabled: boolean }) {
-  const notes = useNotes(within);
-  const choice = useSpaceChoice(within);
-  const [text, setText] = useState('');
-  async function addNote(event: FormEvent) {
+function ProjectTasks({ within, disabled }: { within: string; disabled: boolean }) {
+  const tasks = useTasks(within);
+  const [title, setTitle] = useState('');
+  const [selectedId, setSelectedId] = useState<string>();
+  async function addTask(event: FormEvent) {
     event.preventDefault();
     try {
-      await notes.create.mutateAsync({ text: text.trim(), done: false });
-      if (notes.create.isCurrent()) setText('');
+      const record = await tasks.create.mutateAsync({ title: title.trim(), completed: false });
+      if (tasks.create.isCurrent()) { setSelectedId(record.id); setTitle(''); }
     } catch { /* The mutation's error is rendered below. */ }
   }
-  const error = notes.create.error ?? notes.patch.error ?? notes.delete.error;
-  return <div className="space-content">
-    <h3>This space’s hello</h3>
-    <fieldset className="choice-options" disabled={disabled || choice.set.isPending || !choice.isReady}>
-      <legend className="sr-only">Choose your hello</legend>
-      {CHOICES.map(({ emoji, label }) => <button type="button" className="choice-option" key={emoji}
-        aria-label={`Choose ${label.toLowerCase()}`} aria-pressed={choice.data?.emoji === emoji}
-        onClick={() => choice.set.mutate({ emoji })}>
-        <span className="choice-emoji" aria-hidden="true">{emoji}</span><span>{label}</span>
-      </button>)}
-    </fieldset>
-    <p role="status">{choice.set.isPending ? 'Saving your choice…' : choice.data ? `Saved: ${choice.data.emoji}` : 'Choose an emoji for this space.'}</p>
-    {choice.set.error && <p role="alert">Couldn’t save: {choice.set.error.message}</p>}
-    {choice.status === 'error' && <p role="alert">Couldn’t load the choice. <button type="button"
-      disabled={disabled} onClick={() => choice.retry()}>Retry choice</button></p>}
-    <h3>Notes in this space</h3>
-    <form className="demo-form" onSubmit={addNote}>
-      <label htmlFor="note-text">New note</label>
-      <input id="note-text" value={text} maxLength={200} required
-        disabled={disabled || notes.create.isPending} onChange={(event) => setText(event.target.value)} />
-      <button className="button button-secondary" disabled={disabled || notes.create.isPending || !text.trim()}>Add note</button>
+  const error = tasks.create.error ?? tasks.patch.error;
+  return <div className="project-content">
+    <h3>Tasks</h3>
+    <form className="demo-form" onSubmit={addTask}>
+      <label htmlFor="task-title">New task</label>
+      <input id="task-title" value={title} maxLength={120} required
+        disabled={disabled || tasks.create.isPending} onChange={(event) => setTitle(event.target.value)} />
+      <button className="button button-secondary" disabled={disabled || tasks.create.isPending || !title.trim()}>Add task</button>
     </form>
-    {error && <p role="alert">Couldn’t update the notes: {error.message}</p>}
-    {notes.status === 'error' && <p role="alert">Couldn’t load notes. <button type="button"
-      disabled={disabled} onClick={() => notes.retry()}>Retry notes</button></p>}
-    <ul className="note-list">
-      {notes.records.map((note) => <li key={note.id}>
-        <label><input type="checkbox" checked={note.data.done} disabled={disabled || notes.patch.isPendingFor(note.id)}
-          onChange={() => notes.patch.mutate({ id: note.id, patch: { done: !note.data.done } })} />{note.data.text}</label>
-        <button type="button" className="button button-quiet" aria-label={`Delete note ${note.data.text}`} disabled={disabled || notes.delete.isPendingFor(note.id)}
-          onClick={() => notes.delete.mutate(note.id)}>Delete</button>
+    {error && <p role="alert">Couldn’t update tasks: {error.message}</p>}
+    {tasks.status === 'error' && <p role="alert">Couldn’t load tasks. <button type="button"
+      disabled={disabled} onClick={() => tasks.retry()}>Retry tasks</button></p>}
+    <ul className="task-list">
+      {tasks.records.map((task) => <li key={task.id} data-completed={task.data.completed}>
+        <input type="checkbox" aria-label={`Complete ${task.data.title}`} checked={task.data.completed}
+          disabled={disabled || tasks.patch.isPendingFor(task.id)}
+          onChange={() => tasks.patch.mutate({ id: task.id, patch: { completed: !task.data.completed } })} />
+        <button type="button" className="button button-quiet" aria-label={`Open task ${task.data.title}`}
+          disabled={disabled} aria-pressed={task.id === selectedId} onClick={() => setSelectedId(task.id)}>{task.data.title}</button>
       </li>)}
     </ul>
-    {notes.hasMore && <button type="button" disabled={disabled || notes.isLoadingMore}
-      onClick={() => notes.loadMore()}>More notes</button>}
+    {tasks.hasMore && <button type="button" disabled={disabled || tasks.isLoadingMore}
+      onClick={() => tasks.loadMore()}>More tasks</button>}
+    {selectedId !== undefined
+      ? <TaskDetails key={selectedId} within={within} recordId={selectedId} disabled={disabled} onClose={() => setSelectedId(undefined)} />
+      : <p role="status">Select a task to see its details.</p>}
   </div>;
+}
+
+function TaskDetails({ within, recordId, disabled, onClose }: {
+  within: string; recordId: string; disabled: boolean; onClose: () => void;
+}) {
+  const task = useTask(within, recordId);
+  const [draft, setDraft] = useState<string>();
+  const pending = task.patch.isPending || task.delete.isPending;
+  async function saveTitle(event: FormEvent) {
+    event.preventDefault();
+    if (draft === undefined) return;
+    try {
+      await task.patch.mutateAsync({ title: draft.trim() });
+      if (task.patch.isCurrent()) setDraft(undefined);
+    } catch { /* The mutation's error is rendered below. */ }
+  }
+  async function deleteTask() {
+    try {
+      await task.delete.mutateAsync();
+      if (task.delete.isCurrent()) onClose();
+    } catch { /* The mutation's error is rendered below. */ }
+  }
+  const error = task.patch.error ?? task.delete.error;
+  const data = task.data;
+  return <section className="task-details" aria-label="Task details">
+    <h3>Task details</h3>
+    {task.status === 'error' && <p role="alert">Couldn’t load the task. <button type="button"
+      disabled={disabled} onClick={() => task.retry()}>Retry task</button></p>}
+    {data === undefined ? <p role="status">{task.isLoading ? 'Loading task…' : 'This task is no longer available.'}</p> : <>
+      <p>{data.title} · {data.completed ? 'Completed' : 'To do'}</p>
+      {draft === undefined
+        ? <button type="button" className="button button-quiet" disabled={disabled || pending}
+          onClick={() => setDraft(data.title)}>Edit title</button>
+        : <form className="demo-form" onSubmit={saveTitle}>
+          <label htmlFor="edit-task-title">Task title</label>
+          <input id="edit-task-title" value={draft} maxLength={120} required disabled={disabled || pending}
+            onChange={(event) => setDraft(event.target.value)} />
+          <button className="button button-secondary" disabled={disabled || pending || !draft.trim()}>Save title</button>
+          <button type="button" className="button button-quiet" disabled={disabled || pending} onClick={() => setDraft(undefined)}>Cancel</button>
+        </form>}
+      <button type="button" className="button button-quiet" disabled={disabled || pending} onClick={deleteTask}>Delete task</button>
+    </>}
+    {error && <p role="alert">Couldn’t update the task: {error.message}</p>}
+    <button type="button" className="button button-quiet" onClick={onClose}>Close details</button>
+  </section>;
 }

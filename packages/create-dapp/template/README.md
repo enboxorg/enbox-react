@@ -1,7 +1,7 @@
 # Hello, Enbox
 
 A small React app with a wallet connection, a read-only public profile, and
-private spaces containing notes and an emoji choice. No application server is required.
+a private task board with projects and tasks. No application server is required.
 
 ## Run it
 
@@ -13,8 +13,9 @@ npm run dev
 ```
 
 Open the local URL and choose **Connect wallet**. Enbox handles wallet selection
-and approval. Create a space, add notes, and choose an emoji for that space.
-Switching spaces selects its own notes and choice. Saved values come from native
+and approval. Create a project, add tasks, and check them off as you finish.
+Select a task to edit its title or delete it. Completed tasks can be reopened.
+Switching projects selects that project’s own tasks. Saved values come from native
 live record views and are restored when this profile returns.
 
 ```sh
@@ -51,11 +52,12 @@ the expanded details still show which name is publicly published.
 
 The removable demo lives entirely in `src/demo`:
 
-- `protocol.ts` declares encrypted `space`, `space/note`, and singleton
-  `space/choice` records with payload validators.
-- `use-demo.ts` defines ordinary domain hooks with `useEnboxRecords` and
-  `useEnboxRecord`. A child selection takes its direct parent context ID.
-- `Demo.tsx` renders data and calls typed create, patch, delete, and set commands.
+- `protocol.ts` declares encrypted `project` and `project/task` records with
+  payload validators. Tasks store a title and completion state.
+- `use-demo.ts` defines `useProjects`, `useTasks`, and `useTask` with
+  `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
+  parent context ID; task details also select an exact record ID.
+- `Demo.tsx` renders the board and calls typed create, patch, and delete commands.
   Event handlers use `mutate`; forms await `mutateAsync` and check `isCurrent()`
   before clearing their draft. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
@@ -73,5 +75,5 @@ you control before publishing. This URI identifies saved records and wallet
 grants: changing it creates a different data namespace. Once deployed, keep
 that identifier fixed when changing the app's display name.
 
-Public profile information and the encrypted demo records are separate. Choosing
-an emoji updates this app's private record; it does not edit the public profile.
+Public profile information and the encrypted task board are separate. Task
+updates change this app’s private records; they do not edit the public profile.

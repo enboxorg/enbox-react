@@ -7,7 +7,7 @@ APIs.
 ## Create a dapp
 
 The `@enbox/create-dapp` generator creates a standalone React application with wallet connection, a public
-profile card, and an encrypted spaces-and-notes demo. The demo lives entirely
+profile card, and an encrypted personal task board. The demo lives entirely
 under `src/demo/`; the connection and profile shell can stay as you build.
 
 ```sh
@@ -258,9 +258,9 @@ to persist edits. `patch.mutate({ id, patch })` updates selected fields;
 `delete.mutate(id)` deletes a record. Patch/delete provide `isPendingFor(id)`
 for row controls. Payloads and patches follow the protocol's codecs.
 
-`useEnboxRecord(Protocol, 'space/choice', { within: space.contextId })` selects
-a schema-declared singleton and adds `set.mutate(data)`. Native `set` preserves
-its occupant. To select one ordinary record, pass `{ recordId, within }`;
+On a path declaring `$recordLimit.max: 1`, `useEnboxRecord` selects the native
+singleton and adds `set.mutate(data)`. Native `set` preserves its occupant.
+To select one ordinary record, pass `{ recordId, within }`;
 that result provides `data`, `record`, `patch`, and `delete` without `set` or
 pagination controls. Singleton eligibility derives from the native SDK.
 
@@ -282,7 +282,7 @@ Promises still reject when awaited, and ignoring them in event handlers is safe.
 Each hook owns its view; use the shared-store APIs below when multiple consumers
 need to share one view. No global private-data cache or state-library dependency
 is introduced. The generated example's `use-demo.ts` shows this module pattern
-for spaces, child notes, and one choice per space.
+for projects, child tasks, and a selected task’s detail panel.
 
 Use the lower-level `useRecords` and `useEnboxMutation` for remote or
 role-authorized operations, lazy file payloads, custom creates, and other

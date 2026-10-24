@@ -5,12 +5,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/App.js';
-import type { Choice, Note, Space } from '../src/demo/protocol.js';
+import type { Project, Task } from '../src/demo/protocol.js';
 import '../src/style.css';
 
 // Control only the native boundary. The starter uses the actual React SDK.
 const parameters = new URLSearchParams(location.search);
-type Row = { record: { id: string; contextId: string }; value: Choice | Note | Space };
+type Row = { record: { id: string; contextId: string }; value: Project | Task };
 type Entry = Row & { path: string; within: string | undefined };
 const entries = new Map<string, Entry>();
 const views = new Set<FixtureView>();
@@ -27,7 +27,10 @@ function create(path: string, data: Row['value'], within?: string): Row['record'
   for (const view of views) view.publish();
   return record;
 }
-if (parameters.has('seed')) create('space', { name: 'First space' });
+if (parameters.has('seed')) {
+  const project = create('project', { name: 'First project' });
+  create('project/task', { title: 'First task', completed: false }, project.contextId);
+}
 
 class FixtureView implements RecordView<Row> {
   private state: Extract<RecordViewState<Row>, { status: 'ready' }>;
@@ -52,6 +55,11 @@ class FixtureView implements RecordView<Row> {
   }
 }
 
+async function beforeWrite(): Promise<void> {
+  if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
+  if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
+}
+
 const enbox = {
   dwn: { records: {
     query: async () => ({ status: { code: 200 }, records: parameters.has('missing-profile') ? [] : [{
@@ -69,27 +77,22 @@ const enbox = {
       views.add(view);
       return view;
     },
-    create: async (path: string, request: { data: Row['value']; parentContextId?: string }) =>
-      create(path, request.data, request.parentContextId),
+    create: async (path: string, request: { data: Row['value']; parentContextId?: string }) => {
+      await beforeWrite();
+      return create(path, request.data, request.parentContextId);
+    },
     read: async (_path: string, id: string) => entries.get(id)?.record,
-    patch: async (_path: string, id: string, patch: Partial<Note>) => {
+    patch: async (_path: string, id: string, patch: Partial<Task>) => {
+      await beforeWrite();
       const entry = entries.get(id)!;
       entries.set(id, { ...entry, value: { ...entry.value, ...patch } });
       for (const view of views) view.publish();
       return entry.record;
     },
     delete: async (_path: string, request: { recordId: string }) => {
+      await beforeWrite();
       entries.delete(request.recordId);
       for (const view of views) view.publish();
-    },
-    set: async (path: string, request: { data: Choice; within: string }) => {
-      if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
-      if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
-      const existing = [...entries.values()].find((entry) => entry.path === path && entry.within === request.within);
-      if (existing === undefined) return create(path, request.data, request.within);
-      entries.set(existing.record.id, { ...existing, value: request.data });
-      for (const view of views) view.publish();
-      return existing.record;
     },
   } }),
 } as unknown as Enbox;

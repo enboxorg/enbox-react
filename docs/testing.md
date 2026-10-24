@@ -72,8 +72,8 @@ resolution.
 The browser suite runs without approving a real wallet account. Production
 checks exercise the generated app and its worker. A separate development-only
 fixture tests the actual SDK provider/hooks against a controlled native client
-for connection, profile fallback, scoped child CRUD, independent per-space
-singletons, error retries, and
+for connection, profile fallback, project isolation, task creation, completion,
+reopening, renaming, deletion, error retries, and
 disconnect during pending work. The fixture is absent from generated projects
 and production builds. Wallet approval, vault password/recovery UI, and
 delegated remote replication need separate application integration runs.
@@ -87,8 +87,8 @@ verify a frozen reinstall against each newly created lockfile. Generator
 publication sets `ENBOX_STARTER_SDK_SOURCE=registry` so the same checks require
 the actual released SDK named in the template. The worker check adds an
 ordinary worker temporarily and verifies it cannot overwrite the service worker.
-The native protocol fixture verifies encrypted parents and children, scoped
-notes, singleton occupant preservation, and independent choices under two parents.
+The native protocol fixture verifies encrypted projects and task updates,
+completion/reopening, scoped selections under two projects, and reads by ID.
 Package checks verify supported peer releases in the frozen React 18 fixture.
 
 ## React compatibility
