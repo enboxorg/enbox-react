@@ -63,6 +63,23 @@ describe('local record commands', () => {
     expect(api.delete).not.toHaveBeenCalled();
   });
 
+  it('writes the checked ID even if caller variables change while the parent read is pending', async () => {
+    const { api, wrapper } = setup();
+    const reading = deferred<{ id: string; contextId: string }>();
+    api.read.mockImplementation(() => reading.promise);
+    const hook = renderHook(() => useEnboxRecords(protocol, 'space/note', { within: 'first' }), { wrapper });
+    const variables = { id: 'checked', patch: { done: true } };
+    let issued!: Promise<unknown>;
+    act(() => { issued = hook.result.current.patch.mutateAsync(variables); });
+    expect(api.read).toHaveBeenCalledWith('space/note', 'checked');
+    variables.id = 'foreign';
+    await act(async () => {
+      reading.resolve({ id: 'checked', contextId: 'first/checked' });
+      await issued;
+    });
+    expect(api.patch).toHaveBeenCalledWith('space/note', 'checked', { done: true });
+  });
+
   it('tracks row progress and retires commands when the parent changes', async () => {
     const { api, wrapper } = setup();
     const pending = deferred<{ id: string }>();

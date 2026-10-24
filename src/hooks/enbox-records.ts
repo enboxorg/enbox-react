@@ -127,9 +127,10 @@ export function useEnboxRecords<D extends ProtocolDefinition, C extends TypedPro
   }, [protocol, path, within, active]), { scope });
   const patch = useEnboxMutation(useCallback(async (enbox, variables: { id: string; patch: RecordPatchInput<Value> }) => {
     assertScope(path, within, active);
+    const { id, patch: value } = variables;
     const api = enbox.using(protocol);
-    await assertParent(() => api.records.read(path, variables.id), within);
-    return api.records.patch(path, variables.id, variables.patch);
+    await assertParent(() => api.records.read(path, id), within);
+    return api.records.patch(path, id, value);
   }, [protocol, path, within, active]), { scope });
   const remove = useEnboxMutation(useCallback(async (enbox, id: string) => {
     assertScope(path, within, active);
