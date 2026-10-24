@@ -6,17 +6,14 @@ APIs.
 
 ## Create a dapp
 
-The `@enbox/create-dapp` generator is being prepared for its first npm release.
-It creates a standalone React application with wallet connection, a public
-profile card, and a small encrypted emoji-choice demo. The demo lives entirely
+The `@enbox/create-dapp` generator creates a standalone React application with wallet connection, a public
+profile card, and an encrypted spaces-and-notes demo. The demo lives entirely
 under `src/demo/`; the connection and profile shell can stay as you build.
-
-After publication:
 
 ```sh
 npm create @enbox/dapp@latest my-app
 cd my-app
-npm ci
+npm install
 npm run dev
 ```
 
@@ -33,11 +30,11 @@ bun run check
 bun run starter:dev
 ```
 
-`starter:dev` installs the starter's own frozen npm dependencies and serves
+`starter:dev` installs the starter's dependencies and serves
 its source with Vite. It uses the released SDK pinned in its manifest.
 `bun run test:browser` instead packs the current SDK and generator, creates an
-app outside this repository, and verifies its frozen install, types,
-production build, worker control, and offline reload. Connected-UI tests use
+app outside this repository, and verifies fresh npm/Bun installs, subsequent
+frozen installs, types, production build, worker control, and offline reload. Connected-UI tests use
 a controlled native client; they do not approve a real wallet account.
 
 The starter registers its application-owned worker before rendering or
@@ -232,35 +229,65 @@ visible while that read settles.
 
 ## Read and write records
 
+Define small domain hooks in an ordinary module:
+
 ```tsx
-import { useEnboxMutation, useRecords } from '@enbox/react';
+import { useEnboxRecords } from '@enbox/react';
 import { NotesProtocol } from './application.js';
 
-export function Notes() {
-  const notes = useRecords(NotesProtocol, 'note', {
-    materialize: true,
-    pagination: { limit: 20 },
-  });
-  const create = useEnboxMutation(async (enbox, data: { title: string }) =>
-    enbox.using(NotesProtocol).records.create('note', { data }));
+export function useNotes() {
+  return useEnboxRecords(NotesProtocol, 'note');
+}
 
-  return (
-    <>
-      <button
-        disabled={notes.status === 'idle' || create.isPending}
-        onClick={() => { void create.run({ title: 'Hello' }).catch(() => {}); }}
-      >Add note</button>
-      {create.error && <p role="alert">{create.error.message}</p>}
-      {notes.error && <p role="alert">{notes.error.message}</p>}
-      <ul>{notes.records.map(({ record, value }) => <li key={record.id}>{value.title}</li>)}</ul>
-    </>
-  );
+export function Notes() {
+  const notes = useNotes();
+  return <>
+    <button disabled={!notes.isReady || notes.create.isPending}
+      onClick={() => notes.create.mutate({ title: 'Hello' })}>Add note</button>
+    {notes.create.error && <p role="alert">{notes.create.error.message}</p>}
+    {notes.error && <p role="alert">{notes.error.message}</p>}
+    <ul>{notes.records.map(({ id, data }) => <li key={id}>{data.title}</li>)}</ul>
+  </>;
 }
 ```
 
-Paths, filters, decoded values, and mutation variables remain inferred.
-Nested views require `within`, using the parent's exact context ID. Inline
-query objects with equal contents keep the same view.
+`useEnboxRecords` materializes a local, session-owned collection with `create`,
+`patch`, and `delete` commands. Rows expose `id`, `contextId`, decoded `data`,
+and the native `record`. Data is a read-only TypeScript snapshot; use commands
+to persist edits. `patch.mutate({ id, patch })` updates selected fields;
+`delete.mutate(id)` deletes a record. Patch/delete provide `isPendingFor(id)`
+for row controls. Payloads and patches follow the protocol's codecs.
+
+`useEnboxRecord(Protocol, 'space/choice', { within: space.contextId })` selects
+a schema-declared singleton and adds `set.mutate(data)`. Native `set` preserves
+its occupant. To select one ordinary record, pass `{ recordId, within }`;
+that result provides `data`, `record`, `patch`, and `delete` without `set` or
+pagination controls. Singleton eligibility derives from the native SDK.
+
+Nested hooks require their direct parent's exact context ID; root selections
+reject `within`. Pass `null` while no parent is selected. `enabled: false`
+pauses reads while preserving a valid command scope. Query filters affect only
+reads and are never merged into writes. Parent changes retire captured commands;
+patch/delete check that a supplied ID belongs to the selected parent.
+
+`mutate` is an event-handler action: failures appear in the command's `error`.
+`mutateAsync` returns the native result and rejects with the original cause.
+Check the captured command's `isCurrent()` before clearing a draft or navigating
+after `await`. Each command has separate pending/error state. The native view
+updates displayed data; there is no automatic optimistic overlay or retry.
+
+The collection defaults to a page limit of 20; pass `pagination` to change it.
+`loadMore()` and `retry()` publish failures in query state. Their returned
+Promises still reject when awaited, and ignoring them in event handlers is safe.
+Each hook owns its view; use the shared-store APIs below when multiple consumers
+need to share one view. No global private-data cache or state-library dependency
+is introduced. The generated example's `use-demo.ts` shows this module pattern
+for spaces, child notes, and one choice per space.
+
+Use the lower-level `useRecords` and `useEnboxMutation` for remote or
+role-authorized operations, lazy file payloads, custom creates, and other
+native SDK features. `useRecords(Protocol, path, options)` retains its existing
+materialization and pagination contracts:
 
 Without `materialize`, rows are native record handles and their payloads
 remain lazy. `materialize: { children: ['note/preview'] }` also decodes selected

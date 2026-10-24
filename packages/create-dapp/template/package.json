@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@enbox/browser": "0.3.82",
-    "@enbox/react": "0.0.6",
+    "@enbox/react": "0.0.7",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

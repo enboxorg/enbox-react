@@ -32,6 +32,10 @@ export type { IdleContextViewState, ContextViewOpener, ContextViewResult } from 
 export type { ContextStore, ContextStoreOptions } from './config/context-store.js';
 export { useRecords } from './hooks/records.js';
 export type { RecordsOptions, RecordsResult } from './hooks/records.js';
+export { useEnboxRecord, useEnboxRecords } from './hooks/enbox-records.js';
+export type {
+  EnboxRecordItem, EnboxRecordOptions, EnboxRecordResult, EnboxRecordsOptions, EnboxRecordsResult, EnboxSingletonResult,
+} from './hooks/enbox-records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
 export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';
 export { EnboxBindingChangedError, EnboxNotConnectedError } from './errors.js';

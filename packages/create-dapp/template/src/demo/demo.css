@@ -15,3 +15,11 @@
 @media (prefers-reduced-motion: reduce) {
   .choice-option { transition: none; }
 }
+.demo-form { display: grid; gap: .5rem; margin: 1rem 0; }
+.demo-form input { padding: .65rem; border: 1px solid var(--border); border-radius: .5rem; font: inherit; background: transparent; color: inherit; }
+.space-picker { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.space-picker button[aria-pressed="true"] { background: #edf3e7; border-color: #709865; color: var(--accent); }
+.space-content { border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem; }
+.note-list { padding: 0; list-style: none; }
+.note-list li { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .5rem 0; }
+.note-list label { display: flex; align-items: center; gap: .5rem; overflow-wrap: anywhere; }

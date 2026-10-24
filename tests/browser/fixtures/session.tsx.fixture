@@ -5,29 +5,40 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/App.js';
-import type { Choice } from '../src/demo/protocol.js';
+import type { Choice, Note, Space } from '../src/demo/protocol.js';
 import '../src/style.css';
 
 // Control only the native boundary. The starter uses the actual React SDK.
 const parameters = new URLSearchParams(location.search);
-type Row = { record: { id: string }; value: Choice };
+type Row = { record: { id: string; contextId: string }; value: Choice | Note | Space };
+type Entry = Row & { path: string; within: string | undefined };
+const entries = new Map<string, Entry>();
 const views = new Set<FixtureView>();
-let choice: Choice | undefined;
+let sequence = 0;
 let failRead = parameters.has('read-error');
 let failWrite = parameters.has('write-error');
 let finishSave: (() => void) | undefined;
 let needsRepair = parameters.has('repair');
 
-function currentRows(): Row[] {
-  return choice === undefined ? [] : [{ record: { id: 'choice' }, value: choice }];
+function create(path: string, data: Row['value'], within?: string): Row['record'] {
+  const id = `record-${++sequence}`;
+  const record = { id, contextId: within === undefined ? id : `${within}/${id}` };
+  entries.set(id, { path, within, record, value: data });
+  for (const view of views) view.publish();
+  return record;
 }
+if (parameters.has('seed')) create('space', { name: 'First space' });
 
 class FixtureView implements RecordView<Row> {
-  private state: Extract<RecordViewState<Row>, { status: 'ready' }> = {
-    status: 'ready', records: currentRows(), hasMore: false, current: true,
-  };
+  private state: Extract<RecordViewState<Row>, { status: 'ready' }>;
   private readonly listeners = new Set<(state: RecordViewState<Row>) => void>();
-
+  public constructor(private readonly path: string, private readonly within?: string, private readonly recordId?: string) {
+    this.state = { status: 'ready', records: this.rows(), hasMore: false, current: true };
+  }
+  private rows(): Row[] {
+    return [...entries.values()].filter((entry) => entry.path === this.path && entry.within === this.within
+      && (this.recordId === undefined || entry.record.id === this.recordId));
+  }
   public getSnapshot(): RecordViewState<Row> { return this.state; }
   public subscribe(listener: (state: RecordViewState<Row>) => void): () => void {
     this.listeners.add(listener);
@@ -36,7 +47,7 @@ class FixtureView implements RecordView<Row> {
   public async ready(): Promise<typeof this.state> { return this.state; }
   public async close(): Promise<void> { this.listeners.clear(); views.delete(this); }
   public publish(): void {
-    this.state = { ...this.state, records: currentRows() };
+    this.state = { ...this.state, records: this.rows() };
     for (const listener of this.listeners) listener(this.state);
   }
 }
@@ -52,18 +63,33 @@ const enbox = {
     read: async () => ({ status: { code: 404 } }),
   } },
   using: () => ({ records: {
-    observe: async () => {
+    observe: async (path: string, options: { within?: string; filter?: { recordId?: string } }) => {
       if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
-      const view = new FixtureView();
+      const view = new FixtureView(path, options.within, options.filter?.recordId);
       views.add(view);
       return view;
     },
-    set: async (_path: string, request: { data: Choice }) => {
+    create: async (path: string, request: { data: Row['value']; parentContextId?: string }) =>
+      create(path, request.data, request.parentContextId),
+    read: async (_path: string, id: string) => entries.get(id)?.record,
+    patch: async (_path: string, id: string, patch: Partial<Note>) => {
+      const entry = entries.get(id)!;
+      entries.set(id, { ...entry, value: { ...entry.value, ...patch } });
+      for (const view of views) view.publish();
+      return entry.record;
+    },
+    delete: async (_path: string, request: { recordId: string }) => {
+      entries.delete(request.recordId);
+      for (const view of views) view.publish();
+    },
+    set: async (path: string, request: { data: Choice; within: string }) => {
       if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
       if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
-      choice = request.data;
+      const existing = [...entries.values()].find((entry) => entry.path === path && entry.within === request.within);
+      if (existing === undefined) return create(path, request.data, request.within);
+      entries.set(existing.record.id, { ...existing, value: request.data });
       for (const view of views) view.publish();
-      return { id: 'choice' };
+      return existing.record;
     },
   } }),
 } as unknown as Enbox;

@@ -218,8 +218,31 @@ Create fresh inert clients for server renders and retain one client in the
 browser. Keep stores and codec-bearing manifests inside the application's
 client boundary; they cannot be serialized as server-component props.
 
-The standalone starter registers its own service worker and waits for that worker
-to control the page before rendering the provider. It activates the remaining
-browser polyfills separately. The browser SDK currently activates worker
-updates automatically. Apps requiring deferred activation must account for
-that behavior when protecting unsaved edits.
+The standalone starter calls the native `prepareBrowser` helper with its own
+worker URL and registration scope. This waits for worker control before rendering
+the provider. The browser SDK activates worker updates automatically. Apps
+requiring deferred activation must account for that behavior when protecting
+unsaved edits.
+
+## Local record commands
+
+`useEnboxRecords` and `useEnboxRecord` compose existing query and mutation hooks.
+They own no additional cache or native record lifetime. Collections materialize
+payloads; singleton reads use a one-row native view. A specific-ID selection
+cannot call `set`. Role paths and remote/role query options are excluded from
+these convenience APIs; lower-level hooks retain those native capabilities.
+
+Command identity includes protocol, path, parent context, and active selection;
+query filters and pagination remain read-only concerns. Record-specific
+patch/delete also capture the selected ID. Singleton set captures the logical
+path/context so the first occupant appearing does not retire its command.
+Native patch is path-bound, so nested patch/delete first read immutable context
+metadata and reject a different direct parent. The native SDK retains missing
+record, encryption, validation, authorization, and conflict behavior.
+
+`mutate` handles its returned rejection after state has recorded the error;
+`mutateAsync` and existing `run` preserve the native outcome. Convenience query
+controls similarly mark their returned Promise handled without changing what
+an awaiting caller receives. There are no automatic mutation retries or
+optimistic rows. Ordinary domain hook modules fix protocol paths and scopes;
+they are normal static React hooks rather than dynamically generated hooks.

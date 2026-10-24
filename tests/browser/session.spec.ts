@@ -2,17 +2,32 @@ import { expect, test } from '@playwright/test';
 
 const fixture = 'http://127.0.0.1:4174/__fixtures__/session.html';
 
-test('connects, reads a public profile, saves an observed choice, and disconnects', async ({ page }) => {
+test('connects, reads a public profile, scopes notes and choices to their selected space, and disconnects', async ({ page }) => {
   await page.goto(fixture);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await expect(page.getByRole('heading', { name: 'Alice Example' })).toBeVisible();
   await page.getByText('Profile details', { exact: true }).click();
   await expect(page.getByText('did:example:alice', { exact: true }).last()).toBeVisible();
+  await page.getByLabel('Space name', { exact: true }).fill('Work');
+  await page.getByRole('button', { name: 'Create space', exact: true }).click();
+  await page.getByLabel('New note', { exact: true }).fill('Ship the example');
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Ship the example' }).check();
+  await expect(page.getByRole('checkbox', { name: 'Ship the example' })).toBeChecked();
   await page.getByRole('button', { name: 'Choose grow', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose grow', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Choose spark', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose spark', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: 'Choose grow', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByLabel('Space name', { exact: true }).fill('Home');
+  await page.getByRole('button', { name: 'Create space', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Ship the example' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose spark', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Work', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Ship the example' })).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Choose spark', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Delete note Ship the example', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Ship the example' })).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: '.artifacts/starter-connected.png', fullPage: true });
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
@@ -21,10 +36,10 @@ test('connects, reads a public profile, saves an observed choice, and disconnect
 });
 
 test('keeps the app usable without a published profile and allows failed operations to retry', async ({ page }) => {
-  await page.goto(`${fixture}?missing-profile&read-error&write-error`);
+  await page.goto(`${fixture}?seed&missing-profile&read-error&write-error`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await expect(page.getByText(/No public profile yet/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose grow', exact: true })).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('Fixture read failed.');
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await page.getByRole('button', { name: 'Choose grow', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Fixture save failed.');
@@ -34,7 +49,7 @@ test('keeps the app usable without a published profile and allows failed operati
 });
 
 test('retires pending save presentation when disconnecting', async ({ page }) => {
-  await page.goto(`${fixture}?defer-save`);
+  await page.goto(`${fixture}?seed&defer-save`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await page.getByRole('button', { name: 'Choose grow', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose spark', exact: true })).toBeDisabled();
@@ -57,7 +72,7 @@ test('leaves a declined connection on the connect screen', async ({ page }) => {
 });
 
 test('offers wallet repair and blocks writes until reconnected', async ({ page }) => {
-  await page.goto(`${fixture}?repair`);
+  await page.goto(`${fixture}?seed&repair`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await expect(page.getByText('Reconnect your profile', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose grow', exact: true })).toBeDisabled();

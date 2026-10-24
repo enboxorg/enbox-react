@@ -18,6 +18,10 @@ export type EnboxMutationOptions = Readonly<{
 export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot<Variables> & Readonly<{
   /** Issue work through this render's binding; each call keeps its own outcome. */
   run: (variables: Variables) => Promise<Result>;
+  /** Event-handler action; failures remain visible in error. */
+  mutate: (variables: Variables) => void;
+  /** Await the native result; failures reject with their original cause. */
+  mutateAsync: (variables: Variables) => Promise<Result>;
   /** Clear the displayed error without cancelling writes or clearing pending work. */
   reset: () => void;
   /** Check before caller UI effects after an issued write finishes. */
@@ -45,8 +49,12 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
     (variables: Variables) => observer.run(operation, variables),
     [observer, operation],
   );
+  const mutate = useCallback((variables: Variables): void => {
+    // run() has already published the failure; event handlers need no empty catch.
+    void run(variables).catch(() => {});
+  }, [run]);
   return useMemo(
-    () => Object.freeze({ ...snapshot, run, reset: observer.reset, isCurrent: observer.isCurrent }),
-    [snapshot, run, observer],
+    () => Object.freeze({ ...snapshot, run, mutate, mutateAsync: run, reset: observer.reset, isCurrent: observer.isCurrent }),
+    [snapshot, run, mutate, observer],
   );
 }

@@ -6,3 +6,6 @@ coverage/
 test-results/
 playwright-report/
 .artifacts/
+/packages/create-dapp/template/package-lock.json
+/packages/create-dapp/template/bun.lock
+/packages/create-dapp/template/bun.lockb

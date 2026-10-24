@@ -3,11 +3,10 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const root = new URL('../../', import.meta.url);
-const consumers = ['tests/compatibility/react18/package.json', 'tests/compatibility/starter/package.json'];
+const consumers = ['tests/compatibility/react18/package.json', 'packages/create-dapp/template/package.json'];
 const manifests = [
   'package.json',
   'packages/create-dapp/package.json',
-  'packages/create-dapp/template/package.json',
   ...consumers,
 ];
 const exactVersion = /^\d+\.\d+\.\d+(?:-[\da-z.-]+)?(?:\+[\da-z.-]+)?$/i;
