@@ -54,7 +54,7 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
     void run(variables).catch(() => {});
   }, [run]);
   return useMemo(
-    () => Object.freeze({ ...snapshot, run, mutate, mutateAsync: run, reset: observer.reset, isCurrent: observer.isCurrent }),
+    () => Object.freeze({ ...snapshot, run, mutate, mutateAsync: run, reset: observer.reset, isCurrent: observer.captureGuard() }),
     [snapshot, run, mutate, observer],
   );
 }

@@ -8,7 +8,7 @@ import { connected, ControlledView, controlledClient, deferred, facade } from '.
 const protocol = defineProtocol({
   protocol: 'https://example.test/scoped-records', published: false,
   types: { space: { dataFormats: ['application/json'] }, note: { dataFormats: ['application/json'] }, choice: { dataFormats: ['application/json'] } },
-  structure: { space: { note: {}, choice: { $recordLimit: { max: 1 } } } },
+  structure: { space: { note: { choice: { $recordLimit: { max: 1 } } }, choice: { $recordLimit: { max: 1 } } } },
 } as const, {
   space: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<{ text: string; done: boolean }>(),
   choice: recordCodecs.json<{ emoji: string }>(),
@@ -146,6 +146,47 @@ describe('local record commands', () => {
     expect(captured.isCurrent()).toBe(true);
     await act(async () => { await captured.mutateAsync({ text: 'New', done: false }); });
     expect(api.create).toHaveBeenLastCalledWith('space/note', { data: { text: 'New', done: false }, parentContextId: 'first' });
+  });
+
+  it('rejects ancestor scopes before a singleton query can select an arbitrary descendant', async () => {
+    const { api, wrapper } = setup();
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'space/note/choice', { within: 'first' }), { wrapper }))
+      .toThrow('direct parent context');
+    expect(() => renderHook(() => useEnboxRecords(protocol, 'space/note/choice', { within: 'first' }), { wrapper }))
+      .toThrow('direct parent context');
+    expect(api.observe).not.toHaveBeenCalled();
+    const selected = renderHook(() => useEnboxRecord(protocol, 'space/note/choice', { within: 'first/note' }), { wrapper });
+    await waitFor(() => expect(selected.result.current.isReady).toBe(true));
+    expect(api.observe).toHaveBeenCalledWith('space/note/choice', expect.objectContaining({ within: 'first/note' }));
+    await act(async () => { await selected.result.current.set.mutateAsync({ emoji: '🌱' }); });
+    expect(api.set).toHaveBeenCalledWith('space/note/choice', { within: 'first/note', data: { emoji: '🌱' } });
+  });
+
+  it.each([undefined, '', 7, null])('rejects an ambiguous or malformed JavaScript recordId (%s) before observing', (recordId) => {
+    const { api, wrapper } = setup();
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'space/note', {
+      within: 'first', recordId,
+    } as never), { wrapper })).toThrow(TypeError);
+    expect(api.observe).not.toHaveBeenCalled();
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not reinterpret an explicitly undefined recordId as a singleton selection', () => {
+    const { api, wrapper } = setup();
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'space/choice', {
+      within: 'first', recordId: undefined,
+    } as never), { wrapper })).toThrow('nonempty recordId');
+    expect(api.observe).not.toHaveBeenCalled();
+    expect(api.set).not.toHaveBeenCalled();
+  });
+
+  it('keeps an inactive collection-record selection inert without exposing singleton set', () => {
+    const { api, wrapper } = setup();
+    const hook = renderHook(() => useEnboxRecord(protocol, 'space/note', null), { wrapper });
+    expect(hook.result.current.status).toBe('idle');
+    expect(hook.result.current).not.toHaveProperty('set');
+    expect(api.observe).not.toHaveBeenCalled();
   });
 
   it('selects a specific record, preserves rejected outcomes, and rejects remote scopes', async () => {

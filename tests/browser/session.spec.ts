@@ -52,12 +52,29 @@ test('connects, edits and completes tasks, and keeps projects separate', async (
   await expect(page.getByRole('heading', { name: 'Alice Example' })).toHaveCount(0);
 });
 
+test('retains the selected project when live updates move it outside the visible page', async ({ page }) => {
+  await page.goto(`${fixture}?seed`);
+  await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Complete First task', exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const controls = window as unknown as { __starterFixture: { addProjects(count: number): void } };
+    controls.__starterFixture.addProjects(20);
+  });
+  await expect(page.getByRole('button', { name: 'First project', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: 'Complete First task', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'More projects', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'First project', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('checkbox', { name: 'Complete First task', exact: true })).toBeVisible();
+});
+
 test('keeps the app usable without a published profile and allows failed operations to retry', async ({ page }) => {
   await page.goto(`${fixture}?seed&missing-profile&read-error&write-error`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await expect(page.getByText(/No public profile yet/)).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Fixture read failed.');
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
   await page.getByLabel('New task', { exact: true }).fill('Retry this task');
   await page.getByRole('button', { name: 'Add task', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Fixture save failed.');
@@ -70,6 +87,7 @@ test('keeps the app usable without a published profile and allows failed operati
 test('retires pending completion presentation when disconnecting', async ({ page }) => {
   await page.goto(`${fixture}?seed&defer-save`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
   const completion = page.getByRole('checkbox', { name: 'Complete First task', exact: true });
   await completion.click();
   await expect(completion).toBeDisabled();
@@ -96,9 +114,10 @@ test('offers wallet repair and blocks writes until reconnected', async ({ page }
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await expect(page.getByText('Reconnect your profile', { exact: true })).toBeVisible();
   const completion = page.getByRole('checkbox', { name: 'Complete First task', exact: true });
-  await expect(completion).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Create project', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
   await expect(page.getByText('Reconnect your profile', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
   await expect(completion).toBeEnabled();
   await completion.check();
   await expect(completion).toBeChecked();

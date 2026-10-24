@@ -1,4 +1,4 @@
-import type { ConnectionSnapshot, ConnectionStore, Enbox, RecordView, RecordViewState } from '@enbox/browser';
+import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
 import { AgentSession, ConnectDeniedError } from '@enbox/browser';
 import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
@@ -21,7 +21,7 @@ let finishSave: (() => void) | undefined;
 let needsRepair = parameters.has('repair');
 
 function create(path: string, data: Row['value'], within?: string): Row['record'] {
-  const id = `record-${++sequence}`;
+  const id = `record${++sequence}`;
   const record = { id, contextId: within === undefined ? id : `${within}/${id}` };
   entries.set(id, { path, within, record, value: data });
   for (const view of views) view.publish();
@@ -32,16 +32,25 @@ if (parameters.has('seed')) {
   create('project/task', { title: 'First task', completed: false }, project.contextId);
 }
 
-class FixtureView implements RecordView<Row> {
+class FixtureView implements ExpandableRecordView<Row> {
   private state: Extract<RecordViewState<Row>, { status: 'ready' }>;
   private readonly listeners = new Set<(state: RecordViewState<Row>) => void>();
-  public constructor(private readonly path: string, private readonly within?: string, private readonly recordId?: string) {
-    this.state = { status: 'ready', records: this.rows(), hasMore: false, current: true };
+  private limit: number;
+  public constructor(private readonly path: string, private readonly within: string | undefined,
+    private readonly recordId: string | undefined, private readonly pageSize: number, private readonly descending: boolean) {
+    this.limit = pageSize;
+    this.state = this.snapshot();
   }
   private rows(): Row[] {
-    return [...entries.values()].filter((entry) => entry.path === this.path && entry.within === this.within
+    const rows = [...entries.values()].filter((entry) => entry.path === this.path && entry.within === this.within
       && (this.recordId === undefined || entry.record.id === this.recordId));
+    return this.descending ? rows.reverse() : rows;
   }
+  private snapshot(): typeof this.state {
+    const rows = this.rows();
+    return { status: 'ready', records: rows.slice(0, this.limit), hasMore: rows.length > this.limit, current: true };
+  }
+  public async loadMore(): Promise<void> { this.limit += this.pageSize; this.publish(); }
   public getSnapshot(): RecordViewState<Row> { return this.state; }
   public subscribe(listener: (state: RecordViewState<Row>) => void): () => void {
     this.listeners.add(listener);
@@ -50,7 +59,7 @@ class FixtureView implements RecordView<Row> {
   public async ready(): Promise<typeof this.state> { return this.state; }
   public async close(): Promise<void> { this.listeners.clear(); views.delete(this); }
   public publish(): void {
-    this.state = { ...this.state, records: this.rows() };
+    this.state = this.snapshot();
     for (const listener of this.listeners) listener(this.state);
   }
 }
@@ -71,9 +80,9 @@ const enbox = {
     read: async () => ({ status: { code: 404 } }),
   } },
   using: () => ({ records: {
-    observe: async (path: string, options: { within?: string; filter?: { recordId?: string } }) => {
+    observe: async (path: string, options: { within?: string; filter?: { recordId?: string }; pagination: { limit: number }; dateSort?: string }) => {
       if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
-      const view = new FixtureView(path, options.within, options.filter?.recordId);
+      const view = new FixtureView(path, options.within, options.filter?.recordId, options.pagination.limit, options.dateSort === 'createdDescending');
       views.add(view);
       return view;
     },
@@ -133,7 +142,10 @@ const client = {
   dispose: async () => { sessionLifetime?.abort(); },
 } satisfies ConnectionStore;
 
-Object.assign(window, { __starterFixture: { finishSave: () => finishSave?.() } });
+Object.assign(window, { __starterFixture: {
+  finishSave: () => finishSave?.(),
+  addProjects: (count: number) => { for (let index = 0; index < count; index++) create('project', { name: `Remote project ${index}` }); },
+} });
 createRoot(document.getElementById('root')!).render(
   <StrictMode><EnboxProvider client={client}><App /></EnboxProvider></StrictMode>,
 );

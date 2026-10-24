@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { useProjects, useTask, useTasks } from './use-demo.js';
+import { useProjects, useTask, useTasks } from './use-task-board.js';
 import './demo.css';
 
-export function Demo({ disabled = false }: { disabled?: boolean }) {
+export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const projects = useProjects();
-  const [selectedId, setSelectedId] = useState<string>();
+  const [projectContextId, setProjectContextId] = useState<string>();
   const [name, setName] = useState('');
-  const selected = projects.records.find((project) => project.id === selectedId) ?? projects.records[0];
+  const prompt = projects.isLoading ? 'Loading projects…'
+    : projects.isReady && projects.records.length === 0 ? 'Create your first project to get started.'
+      : 'Select a project to see its tasks.';
   async function addProject(event: FormEvent) {
     event.preventDefault();
     try {
       const record = await projects.create.mutateAsync({ name: name.trim() });
-      if (projects.create.isCurrent()) { setSelectedId(record.id); setName(''); }
+      if (projects.create.isCurrent()) { setProjectContextId(record.contextId); setName(''); }
     } catch { /* The mutation's error is rendered below. */ }
   }
   return (
@@ -33,15 +35,15 @@ export function Demo({ disabled = false }: { disabled?: boolean }) {
         <p>Couldn’t load projects: {projects.error.message}</p>
         <button type="button" disabled={disabled} onClick={() => projects.retry()}>Try again</button>
       </div>}
-      <div className="project-picker" aria-label="Projects">
+      <div className="project-picker" role="group" aria-label="Projects">
         {projects.records.map((project) => <button type="button" className="button button-quiet" key={project.id} disabled={disabled}
-          aria-pressed={project.id === selected?.id} onClick={() => setSelectedId(project.id)}>{project.data.name}</button>)}
+          aria-pressed={project.contextId === projectContextId} onClick={() => setProjectContextId(project.contextId)}>{project.data.name}</button>)}
       </div>
       {projects.hasMore && <button type="button" disabled={disabled || projects.isLoadingMore}
         onClick={() => projects.loadMore()}>More projects</button>}
-      {selected !== undefined
-        ? <ProjectTasks key={selected.contextId} within={selected.contextId} disabled={disabled} />
-        : <p role="status">{projects.isLoading ? 'Loading projects…' : 'Create your first project to get started.'}</p>}
+      {projectContextId !== undefined
+        ? <ProjectTasks key={projectContextId} within={projectContextId} disabled={disabled} />
+        : <p role="status">{prompt}</p>}
     </section>
   );
 }
@@ -57,7 +59,6 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
       if (tasks.create.isCurrent()) { setSelectedId(record.id); setTitle(''); }
     } catch { /* The mutation's error is rendered below. */ }
   }
-  const error = tasks.create.error ?? tasks.patch.error;
   return <div className="project-content">
     <h3>Tasks</h3>
     <form className="demo-form" onSubmit={addTask}>
@@ -66,7 +67,8 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
         disabled={disabled || tasks.create.isPending} onChange={(event) => setTitle(event.target.value)} />
       <button className="button button-secondary" disabled={disabled || tasks.create.isPending || !title.trim()}>Add task</button>
     </form>
-    {error && <p role="alert">Couldn’t update tasks: {error.message}</p>}
+    {tasks.create.error && <p role="alert">Couldn’t add the task: {tasks.create.error.message}</p>}
+    {tasks.patch.error && <p role="alert">Couldn’t update the task: {tasks.patch.error.message}</p>}
     {tasks.status === 'error' && <p role="alert">Couldn’t load tasks. <button type="button"
       disabled={disabled} onClick={() => tasks.retry()}>Retry tasks</button></p>}
     <ul className="task-list">
@@ -106,7 +108,6 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
       if (task.delete.isCurrent()) onClose();
     } catch { /* The mutation's error is rendered below. */ }
   }
-  const error = task.patch.error ?? task.delete.error;
   const data = task.data;
   return <section className="task-details" aria-label="Task details">
     <h3>Task details</h3>
@@ -126,7 +127,8 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
         </form>}
       <button type="button" className="button button-quiet" disabled={disabled || pending} onClick={deleteTask}>Delete task</button>
     </>}
-    {error && <p role="alert">Couldn’t update the task: {error.message}</p>}
+    {task.patch.error && <p role="alert">Couldn’t update the task: {task.patch.error.message}</p>}
+    {task.delete.error && <p role="alert">Couldn’t delete the task: {task.delete.error.message}</p>}
     <button type="button" className="button button-quiet" onClick={onClose}>Close details</button>
   </section>;
 }

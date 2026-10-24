@@ -30,8 +30,9 @@ bun run check
 bun run starter:dev
 ```
 
-`starter:dev` installs the starter's dependencies and serves
-its source with Vite. It uses the released SDK pinned in its manifest.
+`starter:dev` builds and packs the local SDK, installs it in the starter without
+changing the template manifest, and serves its source with Vite. It works before
+the SDK version is published.
 `bun run test:browser` instead packs the current SDK and generator, creates an
 app outside this repository, and verifies fresh npm/Bun installs, subsequent
 frozen installs, types, production build, worker control, and offline reload. Connected-UI tests use
@@ -274,14 +275,14 @@ patch/delete check that a supplied ID belongs to the selected parent.
 `mutateAsync` returns the native result and rejects with the original cause.
 Check the captured command's `isCurrent()` before clearing a draft or navigating
 after `await`. Each command has separate pending/error state. The native view
-updates displayed data; there is no automatic optimistic overlay or retry.
+updates displayed data; these hooks add no optimistic overlay or retry.
 
 The collection defaults to a page limit of 20; pass `pagination` to change it.
 `loadMore()` and `retry()` publish failures in query state. Their returned
 Promises still reject when awaited, and ignoring them in event handlers is safe.
 Each hook owns its view; use the shared-store APIs below when multiple consumers
 need to share one view. No global private-data cache or state-library dependency
-is introduced. The generated example's `use-demo.ts` shows this module pattern
+is introduced. The generated example's `use-task-board.ts` shows this module pattern
 for projects, child tasks, and a selected task’s detail panel.
 
 Use the lower-level `useRecords` and `useEnboxMutation` for remote or
@@ -323,7 +324,8 @@ const stop = notes.subscribe(() => updateIndex(notes.getSnapshot().records));
 await notes.ready();
 ```
 
-React consumers use `useRecords(notes)` or `useRecordView(notes)`. They share
+React consumers use `useRecords(notes)` or `useRecordView(notes)`. Both preserve
+additional snapshot fields such as a selected store’s `selection`. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
 Construction is inert. The first subscriber, `ready()`, or `retry()` starts
@@ -415,8 +417,9 @@ counts current work, the latest invocation owns the displayed error, and
 finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
 Use the captured mutation's `isCurrent()` before UI effects after `await` to
-check that its connection binding is still active. Pass `{ scope: pageId }`
-when the mutation also belongs to a page or dialog. Changing that scope resets
+check that its connection binding and subscription lifetime are still active.
+Old guards stay retired after Activity hides and restores the same component.
+Pass `{ scope: pageId }` when the mutation also belongs to a page or dialog. Changing that scope resets
 pending/error presentation and retires captured controls while issued writes
 retain their original Promise outcomes.
 

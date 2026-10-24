@@ -54,17 +54,17 @@ The removable demo lives entirely in `src/demo`:
 
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
-- `use-demo.ts` defines `useProjects`, `useTasks`, and `useTask` with
+- `use-task-board.ts` defines `useProjects`, `useTasks`, and `useTask` with
   `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
   parent context ID; task details also select an exact record ID.
-- `Demo.tsx` renders the board and calls typed create, patch, and delete commands.
+- `TaskBoard.tsx` renders the board and calls typed create, patch, and delete commands.
   Event handlers use `mutate`; forms await `mutateAsync` and check `isCurrent()`
   before clearing their draft. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
 
 To replace the demo, register your own typed application protocol in
-`application.ts` in place of `DemoProtocol`. Then delete `src/demo` and remove
-the `Demo` import and component from `App.tsx`. Enbox requires at least one
+`application.ts` in place of `TaskBoardProtocol`. Then delete `src/demo` and remove
+the `TaskBoard` import and component from `App.tsx`. Enbox requires at least one
 application protocol, so keep your replacement registered. The profile card,
 connection shell, and service worker remain the base for your app.
 

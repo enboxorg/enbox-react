@@ -201,7 +201,7 @@ export class ConnectionController {
         if (options?.wallet !== undefined) {
           if (options.connectHandler !== undefined) throw new TypeError('Choose wallet options or a connectHandler, not both.');
           const { wallet, ...rest } = options;
-          // Per-call wallet choice keeps the app identity configured by the provider.
+          // Per-call wallet options inherit the provider's app identity defaults.
           nativeOptions = { ...rest, connectHandler: BrowserConnectHandler({ ...this.walletDefaults, ...wallet }) };
         }
       }

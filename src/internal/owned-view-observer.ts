@@ -184,10 +184,11 @@ export class OwnedViewObserver<
     this._active = false;
     const unsubscribeBinding = this._unsubscribeBinding;
     this._unsubscribeBinding = undefined;
-    if (unsubscribeBinding !== undefined) this.runCleanup(unsubscribeBinding);
-    this.closeAttempt();
+    // Reset before any native cleanup can synchronously start a replacement.
     this._state = this._openView === null ? this._presentation.idle : this._presentation.loading;
     this._snapshot = this._openView === null ? this._idleSnapshot : this._loadingSnapshot;
+    this.closeAttempt();
+    if (unsubscribeBinding !== undefined) this.runCleanup(unsubscribeBinding);
     this.notify();
   }
 

@@ -1,5 +1,5 @@
 import type { RecordView } from '@enbox/browser';
-import { useRecordView } from '@enbox/react';
+import { useRecords, useRecordView } from '@enbox/react';
 import { createRecordStore } from '@enbox/react/config';
 
 type Row = { title: string };
@@ -9,6 +9,13 @@ const store = createRecordStore({ selection: null as string | null, open });
 export function SelectedStoreContracts(): void {
   const snapshot = useRecordView(store);
   const selection: string | null = snapshot.selection;
+  const records = useRecords(store);
+  const recordSelection: string | null = records.selection;
+  const recordTitle: string | undefined = records.records[0]?.title;
+  void recordSelection; void recordTitle;
+  // @ts-expect-error shared record hooks retain their selection type
+  const wrongSelection: number = records.selection;
+  void wrongSelection;
   const title: string | undefined = snapshot.records[0]?.title;
   const attaching: Promise<void> = store.select('folder');
   const released: Promise<void> = store.select(null);

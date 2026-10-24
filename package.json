@@ -30,7 +30,7 @@
     "test:generator": "node --test packages/create-dapp/tests/*.test.mjs",
     "audit": "bun audit",
     "check": "bun run audit && bun run typecheck && bun run test && node --test --test-isolation=none tests/package/*.test.mjs && bun run test:generator",
-    "starter:dev": "npm --prefix packages/create-dapp/template install --no-audit --no-fund && npm --prefix packages/create-dapp/template run dev",
+    "starter:dev": "bun run build && node scripts/dev-starter.mjs",
     "prepack": "bun run build",
     "test:react18": "bun run build && node scripts/test-react18.mjs"
   },

@@ -7,7 +7,7 @@ export type Task = { title: string; completed: boolean };
 
 // Replace this example URI with one you own before publishing your app.
 // Keep it stable after launch: it identifies the app's saved data and grants.
-export const DemoProtocol = defineProtocol({
+export const TaskBoardProtocol = defineProtocol({
   protocol: `https://example.com/${encodeURIComponent(app.id)}/demo/v2`,
   published: false,
   types: {

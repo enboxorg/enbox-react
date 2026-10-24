@@ -7,7 +7,8 @@ Install dependencies with `bun install --frozen-lockfile`. Dependency versions
 and the allowed peer releases are fixed. `bunfig.toml` disables automatic
 runtime installation. The standalone starter ships no lockfile and uses
 published SDK exports. Its isolated browser check installs the current packed
-SDK instead.
+SDK instead. `starter:dev` also uses the local SDK archive without changing
+the template manifest or generating a template lockfile.
 
 | Command | Purpose |
 | --- | --- |
@@ -20,7 +21,7 @@ SDK instead.
 | `bun run check` | Run the dependency audit, type checks, unit/integration tests, and package checks. |
 | `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
 | `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
-| `bun run starter:dev` | Install the canonical starter's dependencies and serve it with Vite. |
+| `bun run starter:dev` | Build/install the local packed SDK and serve the canonical starter with Vite. |
 
 Install Chromium with `bunx --no-install playwright install chromium` before
 running browser tests if it is not available. See [testing](docs/testing.md)
@@ -75,7 +76,8 @@ Root development dependencies support only SDK compilation and tests.
 The single starter source lives in `packages/create-dapp/template`. Keep its
 configuration independent of the repository root. Its exact dependency manifest
 defines each new app; the user creates and commits their package manager’s
-lockfile on first install. The generator customizes JSON metadata only; its published archive includes this same template.
+lockfile on first install. The generator customizes JSON metadata only; its
+published archive includes this same template.
 The starter owns its Vite, React Fast Refresh, TypeScript, and type dependencies.
 Vite bundles the application worker; a scoped cache provides the offline shell.
 The generator itself has no dependencies. Add packages where they are used,
