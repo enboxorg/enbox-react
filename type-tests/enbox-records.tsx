@@ -12,6 +12,7 @@ export function Contract(): null {
   spaces.create.mutate({ name: 'Work' });
   const notes = useEnboxRecords(protocol, 'space/note', { within: 'parent' });
   notes.patch.mutate({ id: 'note', patch: { done: true } });
+  notes.patch.mutate({ id: 'note', patch: (current) => ({ done: !current.done }) });
   const text: string | undefined = notes.records[0]?.data.text;
   void text;
   const choice = useEnboxRecord(protocol, 'space/choice', { within: 'parent' });

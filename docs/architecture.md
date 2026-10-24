@@ -252,3 +252,18 @@ record, encryption, validation, authorization, and conflict behavior.
 controls similarly mark their returned Promise handled without changing what
 an awaiting caller receives. These hooks add no mutation retries or optimistic rows. Ordinary domain hook modules fix protocol paths and scopes;
 they are normal static React hooks rather than dynamically generated hooks.
+
+Success handlers are per invocation and run through the existing mutation
+observer, keeping pending/error presentation in one place. They start only after
+native success and only while that invocation's subscription generation and
+binding remain current. They are awaited; a handler failure can reject the
+mutation after the native write has committed. A retired handler is skipped
+without replacing the issued write's outcome. Async handler bodies still own
+checks after their own further awaits.
+
+Context hooks return the owner's snapshot and retry control directly, preserving
+owner metadata and captured-selection semantics. Domain hooks share logic;
+shared views use explicit owner stores. Selectors read those stores without
+another native observer. CI builds declarations once in `check`; consumer
+scripts use those same outputs. Standalone public consumer commands still build
+before packing.

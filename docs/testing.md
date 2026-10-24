@@ -97,7 +97,8 @@ Shared-store regressions exercise one native view across React and headless
 consumers, explicit headless startup, readiness cancellation, late opening,
 owner abort, and async close. Native record and context integrations also
 start the public stores without subscriptions.
-Mutation tests cover caller guards after session replacement and Activity
+Mutation tests cover success-handler inference, awaiting, failure propagation,
+per-invocation capture, and retirement, plus caller guards after session replacement and Activity
 resumption. Cleanup regressions preserve replacement record views, profile
 watches, and image leases installed synchronously during native teardown.
 The starter also retains a selected project when live updates move it beyond

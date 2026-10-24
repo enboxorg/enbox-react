@@ -1,6 +1,6 @@
-import type { ConnectionSnapshot } from '@enbox/browser';
+import type { ConnectionSnapshot, Enbox } from '@enbox/browser';
 
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EnboxBindingChangedError, EnboxNotConnectedError, EnboxProvider, useEnboxMutation } from '../src/index.js';
@@ -8,6 +8,108 @@ import { EnboxMutationObserver } from '../src/internal/mutation-observer.js';
 import { connected, controlledClient, deferred, facade, subscribeObserver } from './helpers.js';
 
 describe('session-bound mutations', () => {
+  it('awaits a typed success handler once and keeps progress until it settles', async () => {
+    const { client } = controlledClient(connected());
+    const handler = deferred<void>();
+    const onSuccess = vi.fn(async (_result: string, _variables: { title: string }) => handler.promise);
+    const operation = vi.fn(async (_enbox: Enbox, variables: { title: string }) => variables.title);
+    const hook = renderHook(() => useEnboxMutation(operation), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    const variables = { title: 'Saved' };
+    act(() => hook.result.current.mutate(variables, { onSuccess }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('Saved', variables));
+    expect(hook.result.current.isPending).toBe(true);
+    await act(async () => { handler.resolve(); await handler.promise; });
+    await waitFor(() => expect(hook.result.current.isPending).toBe(false));
+    expect(operation).toHaveBeenCalledOnce();
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(hook.result.current.error).toBeUndefined();
+    expect(hook.result.current.run).toBe(hook.result.current.mutateAsync);
+  });
+
+  it('surfaces success-handler failures without retrying an already committed operation', async () => {
+    const { client } = controlledClient(connected());
+    const error = new Error('UI handler failed');
+    const operation = vi.fn(async () => 'committed');
+    const hook = renderHook(() => useEnboxMutation(operation), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync(undefined, { onSuccess: () => { throw error; } })).rejects.toBe(error);
+    });
+    expect(hook.result.current.error).toBe(error);
+    expect(operation).toHaveBeenCalledOnce();
+  });
+
+  it('captures the invoking handler and skips it when the parent scope is replaced', async () => {
+    const { client } = controlledClient(connected());
+    const write = deferred<string>();
+    const firstHandler = vi.fn();
+    const replacementHandler = vi.fn();
+    const options = { onSuccess: firstHandler };
+    const hook = renderHook(({ scope }) => useEnboxMutation(async () => write.promise, { scope }), {
+      initialProps: { scope: 'first' },
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    let issued!: Promise<string>;
+    act(() => { issued = hook.result.current.mutateAsync(undefined, options); });
+    options.onSuccess = replacementHandler;
+    hook.rerender({ scope: 'next' });
+    await act(async () => { write.resolve('saved'); expect(await issued).toBe('saved'); });
+    expect(firstHandler).not.toHaveBeenCalled();
+    expect(replacementHandler).not.toHaveBeenCalled();
+    expect(hook.result.current.error).toBeUndefined();
+  });
+
+  it('uses the handler supplied by the invocation even if its options object is later changed', async () => {
+    const { client } = controlledClient(connected());
+    const write = deferred<string>();
+    const original = vi.fn();
+    const replacement = vi.fn();
+    const options = { onSuccess: original };
+    const hook = renderHook(() => useEnboxMutation(async () => write.promise), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    let issued!: Promise<string>;
+    act(() => { issued = hook.result.current.mutateAsync(undefined, options); });
+    options.onSuccess = replacement;
+    await act(async () => { write.resolve('saved'); await issued; });
+    expect(original).toHaveBeenCalledWith('saved', undefined);
+    expect(replacement).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid success handlers before writing and publishes option failures in state', async () => {
+    const { client } = controlledClient(connected());
+    const operation = vi.fn(async () => 'saved');
+    const hook = renderHook(() => useEnboxMutation(operation), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync(undefined, { onSuccess: null } as never)).rejects.toThrow('must be a function');
+    });
+    expect(hook.result.current.error).toBeInstanceOf(TypeError);
+    const failure = new Error('Callback options failed');
+    const options = { get onSuccess(): never { throw failure; } };
+    act(() => hook.result.current.mutate(undefined, options));
+    await waitFor(() => expect(hook.result.current.error).toBe(failure));
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('keeps native rejection causes and does not invoke a success handler after failure', async () => {
+    const { client } = controlledClient(connected());
+    const error = { native: 'failure' };
+    const onSuccess = vi.fn();
+    const hook = renderHook(() => useEnboxMutation(async () => { throw error; }), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync(undefined, { onSuccess })).rejects.toBe(error);
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(hook.result.current.error?.cause).toBe(error);
+  });
+
   it('publishes immutable typed variables for concurrent calls and removes only settled calls', async () => {
     const initial = connected();
     const { client } = controlledClient(initial);

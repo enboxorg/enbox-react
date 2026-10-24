@@ -37,5 +37,5 @@ export type {
   EnboxRecordItem, EnboxRecordOptions, EnboxRecordResult, EnboxRecordsOptions, EnboxRecordsResult, EnboxSingletonResult,
 } from './hooks/enbox-records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
-export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';
+export type { EnboxMutation, EnboxMutationCallOptions, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';
 export { EnboxBindingChangedError, EnboxNotConnectedError } from './errors.js';

@@ -11,12 +11,11 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const prompt = projects.isLoading ? 'Loading projects…'
     : projects.isReady && projects.records.length === 0 ? 'Create your first project to get started.'
       : 'Select a project to see its tasks.';
-  async function addProject(event: FormEvent) {
+  function addProject(event: FormEvent) {
     event.preventDefault();
-    try {
-      const record = await projects.create.mutateAsync({ name: name.trim() });
-      if (projects.create.isCurrent()) { setProjectContextId(record.contextId); setName(''); }
-    } catch { /* The mutation's error is rendered below. */ }
+    projects.create.mutate({ name: name.trim() }, {
+      onSuccess: (record) => { setProjectContextId(record.contextId); setName(''); },
+    });
   }
   return (
     <section className="panel demo" aria-labelledby="demo-title">
@@ -52,12 +51,11 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
   const tasks = useTasks(within);
   const [title, setTitle] = useState('');
   const [selectedId, setSelectedId] = useState<string>();
-  async function addTask(event: FormEvent) {
+  function addTask(event: FormEvent) {
     event.preventDefault();
-    try {
-      const record = await tasks.create.mutateAsync({ title: title.trim(), completed: false });
-      if (tasks.create.isCurrent()) { setSelectedId(record.id); setTitle(''); }
-    } catch { /* The mutation's error is rendered below. */ }
+    tasks.create.mutate({ title: title.trim(), completed: false }, {
+      onSuccess: (record) => { setSelectedId(record.id); setTitle(''); },
+    });
   }
   return <div className="project-content">
     <h3>Tasks</h3>
@@ -75,7 +73,7 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
       {tasks.records.map((task) => <li key={task.id} data-completed={task.data.completed}>
         <input type="checkbox" aria-label={`Complete ${task.data.title}`} checked={task.data.completed}
           disabled={disabled || tasks.patch.isPendingFor(task.id)}
-          onChange={() => tasks.patch.mutate({ id: task.id, patch: { completed: !task.data.completed } })} />
+          onChange={(event) => tasks.patch.mutate({ id: task.id, patch: { completed: event.currentTarget.checked } })} />
         <button type="button" className="button button-quiet" aria-label={`Open task ${task.data.title}`}
           disabled={disabled} aria-pressed={task.id === selectedId} onClick={() => setSelectedId(task.id)}>{task.data.title}</button>
       </li>)}
@@ -94,19 +92,13 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
   const task = useTask(within, recordId);
   const [draft, setDraft] = useState<string>();
   const pending = task.patch.isPending || task.delete.isPending;
-  async function saveTitle(event: FormEvent) {
+  function saveTitle(event: FormEvent) {
     event.preventDefault();
     if (draft === undefined) return;
-    try {
-      await task.patch.mutateAsync({ title: draft.trim() });
-      if (task.patch.isCurrent()) setDraft(undefined);
-    } catch { /* The mutation's error is rendered below. */ }
+    task.patch.mutate({ title: draft.trim() }, { onSuccess: () => setDraft(undefined) });
   }
-  async function deleteTask() {
-    try {
-      await task.delete.mutateAsync();
-      if (task.delete.isCurrent()) onClose();
-    } catch { /* The mutation's error is rendered below. */ }
+  function deleteTask() {
+    task.delete.mutate(undefined, { onSuccess: onClose });
   }
   const data = task.data;
   return <section className="task-details" aria-label="Task details">

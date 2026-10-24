@@ -154,6 +154,7 @@ describe('React Activity', () => {
   it('keeps an old mutation UI guard retired after the same view resumes', async () => {
     const { client } = controlledClient(connected());
     const write = deferred<string>();
+    const onSuccess = vi.fn();
     const controls: ReturnType<typeof useEnboxMutation<void, string>>[] = [];
     const operation = async () => write.promise;
     function Content() {
@@ -165,13 +166,14 @@ describe('React Activity', () => {
     const tree = render(<EnboxProvider client={client}><Activity mode="visible">{content}</Activity></EnboxProvider>);
     const captured = controls.at(-1)!;
     let issued!: Promise<string>;
-    act(() => { issued = captured.mutateAsync(); });
+    act(() => { issued = captured.mutateAsync(undefined, { onSuccess }); });
     tree.rerender(<EnboxProvider client={client}><Activity mode="hidden">{content}</Activity></EnboxProvider>);
     expect(captured.isCurrent()).toBe(false);
     tree.rerender(<EnboxProvider client={client}><Activity mode="visible">{content}</Activity></EnboxProvider>);
     await waitFor(() => expect(controls.at(-1)!.isCurrent()).toBe(true));
     await act(async () => { write.resolve('saved'); await issued; });
     expect(captured.isCurrent()).toBe(false);
+    expect(onSuccess).not.toHaveBeenCalled();
     expect(controls.at(-1)!.isCurrent()).toBe(true);
   });
 

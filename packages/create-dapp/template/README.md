@@ -58,8 +58,8 @@ The removable demo lives entirely in `src/demo`:
   `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
   parent context ID; task details also select an exact record ID.
 - `TaskBoard.tsx` renders the board and calls typed create, patch, and delete commands.
-  Event handlers use `mutate`; forms await `mutateAsync` and check `isCurrent()`
-  before clearing their draft. Native observation updates the displayed data.
+  Event handlers use `mutate` with a guarded `onSuccess` handler to clear
+  drafts or close details. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
 
 To replace the demo, register your own typed application protocol in

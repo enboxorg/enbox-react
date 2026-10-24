@@ -32,7 +32,8 @@ bun run starter:dev
 
 `starter:dev` builds and packs the local SDK, installs it in the starter without
 changing the template manifest, and serves its source with Vite. It works before
-the SDK version is published.
+the SDK version is published. Vite reloads starter source edits; restart
+`starter:dev` after changing SDK source to pack and install the new build.
 `bun run test:browser` instead packs the current SDK and generator, creates an
 app outside this repository, and verifies fresh npm/Bun installs, subsequent
 frozen installs, types, production build, worker control, and offline reload. Connected-UI tests use
@@ -48,6 +49,24 @@ npm also saves exact versions. The current peer pins are `@enbox/browser`
 `0.3.82` and React `18.3.1` or `19.3.0`. Development setup and intentional
 version changes are documented in
 [CONTRIBUTING.md](https://github.com/enboxorg/enbox-react/blob/main/CONTRIBUTING.md).
+
+## Choose a record API
+
+| Need | API |
+| --- | --- |
+| A local list with typed create, patch, and delete | `useEnboxRecords(protocol, path, options)` |
+| One record by ID, or a schema-declared singleton | `useEnboxRecord(protocol, path, options)` |
+| Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
+| A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
+| One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
+| A selected slice of an existing store | `useObservableStore(store, fallback, selector)` |
+
+Domain hooks such as `useTasks(projectContextId)` fix paths and options in one
+module. Each call still owns its own view and mutation state. To share both,
+call the domain hook once in a parent and pass its result through props or
+context. For a view also used by headless controllers, create a store for the
+owning session/page, pass it through props or context, and close it or abort its
+owner signal when that scope ends. Give shared filters and pagination one owner.
 
 ## Define the application
 
@@ -258,6 +277,10 @@ and the native `record`. Data is a read-only TypeScript snapshot; use commands
 to persist edits. `patch.mutate({ id, patch })` updates selected fields;
 `delete.mutate(id)` deletes a record. Patch/delete provide `isPendingFor(id)`
 for row controls. Payloads and patches follow the protocol's codecs.
+A patch can also be a pure producer, such as
+`oneNote.patch.mutate((current) => ({ done: !current.done }))`. It receives the
+native current value and may return `undefined` to skip the write. Native
+conflict recovery may call it again, so keep UI effects in `onSuccess`.
 
 On a path declaring `$recordLimit.max: 1`, `useEnboxRecord` selects the native
 singleton and adds `set.mutate(data)`. Native `set` preserves its occupant.
@@ -272,9 +295,25 @@ reads and are never merged into writes. Parent changes retire captured commands;
 patch/delete check that a supplied ID belongs to the selected parent.
 
 `mutate` is an event-handler action: failures appear in the command's `error`.
-`mutateAsync` returns the native result and rejects with the original cause.
-Check the captured command's `isCurrent()` before clearing a draft or navigating
-after `await`. Each command has separate pending/error state. The native view
+For a UI effect after success, provide a guarded handler:
+
+```tsx
+notes.create.mutate({ title: draft }, {
+  onSuccess: () => setDraft(''),
+});
+```
+
+The SDK starts `onSuccess(result, variables)` only while the invoking session,
+context, and subscription lifetime are current. It awaits a returned Promise
+and ignores the handler's return value. A handler failure enters mutation error
+state; its native write has already succeeded. Each current invocation owns its
+handler, including concurrent calls. These hooks add no write retries.
+
+`mutateAsync` returns the operation's result after any supplied handler settles.
+Without a handler, it preserves the native result and rejection unchanged.
+Use it for custom sequences, checking the captured command's `isCurrent()`
+before caller UI effects after `await`. A handler that performs additional
+asynchronous work owns its own checks after those further awaits. Each command has separate pending/error state. The native view
 updates displayed data; these hooks add no optimistic overlay or retry.
 
 The collection defaults to a page limit of 20; pass `pagination` to change it.
@@ -328,6 +367,10 @@ React consumers use `useRecords(notes)` or `useRecordView(notes)`. Both preserve
 additional snapshot fields such as a selected store’s `selection`. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
+A count-only component can subscribe to the same owner with
+`useObservableStore(notes, 0, (state) => state.records.length)`; it rerenders
+when the selected count changes without opening another view.
+
 Construction is inert. The first subscriber, `ready()`, or `retry()` starts
 the view, which stays open until the owner calls `notes.close()` or its lifetime signal
 aborts. Release controller subscriptions with `stop()` when retiring them.
@@ -413,7 +456,9 @@ For controllers and React consumers sharing a catalog, use
 Mutation runners check the rendered facade and session before executing and
 reject obsolete bindings. Each invocation has its own Promise. `pendingCount`
 counts current work, the latest invocation owns the displayed error, and
-`reset()` clears that error without cancelling writes. Issued operations can
+`reset()` clears that error without cancelling writes. Pending work includes
+an awaited success handler. `run` is the compatibility alias for `mutateAsync`.
+Issued operations can
 finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
 Use the captured mutation's `isCurrent()` before UI effects after `await` to
@@ -421,7 +466,9 @@ check that its connection binding and subscription lifetime are still active.
 Old guards stay retired after Activity hides and restores the same component.
 Pass `{ scope: pageId }` when the mutation also belongs to a page or dialog. Changing that scope resets
 pending/error presentation and retires captured controls while issued writes
-retain their original Promise outcomes.
+retain their original Promise outcomes. Use a stable scope key, such as a
+record ID; a new object reference creates a new scope. Scope changes retire
+presentation rather than queueing calls; concurrent invocations remain parallel.
 
 `pendingVariables` lists each current invocation's input in start order,
 including concurrent calls with identical inputs. Derive per-row busy state
