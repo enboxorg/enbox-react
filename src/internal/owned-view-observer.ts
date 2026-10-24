@@ -134,11 +134,13 @@ export class OwnedViewObserver<
     else finish();
   });
 
-  /** Reopen an active selection, sharing an existing opening attempt. */
+  /** Start an owned store or reopen an active hook view, sharing its opening attempt. */
   public readonly retry = (): Promise<void> => {
-    if (!this._active || this._openView === null || !this.isBindingCurrent()) {
+    if (this._closed || this._openView === null || !this.isBindingCurrent()
+      || (!this._active && !this._retainWithoutSubscribers)) {
       return Promise.reject(new EnboxBindingChangedError());
     }
+    if (!this._active) this.start();
     if (this._attempt !== undefined && this._attempt.view === undefined) return this._attempt.opening;
     return this.beginOpening();
   };

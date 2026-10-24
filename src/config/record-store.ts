@@ -12,7 +12,7 @@ export type RecordStore<Item> = Readonly<{
   subscribe(notify: () => void): () => void;
   /** Wait for usable local rows without waiting for replication currentness. */
   ready(options?: { signal?: AbortSignal }): Promise<Extract<RecordViewResult<Item>, { status: 'ready' }>>;
-  /** Reopen an active view; resolves after attachment rather than row readiness. */
+  /** Start or reopen the view; resolves after attachment rather than row readiness. */
   retry(): Promise<void>;
   /** Expand the retained prefix; concurrent calls share the same Promise. */
   loadMore(): Promise<void>;
@@ -27,7 +27,7 @@ export type RecordStoreOptions = {
   loadAll?: boolean;
 };
 
-/** Subscription or ready() opens the view; it stays open until close() or abort. */
+/** Subscription, ready(), or retry() opens the view until close() or abort. */
 export function createRecordStore<Item>(
   opener: RecordViewOpener<Item> | null,
   options?: RecordStoreOptions,

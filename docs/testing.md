@@ -92,7 +92,9 @@ versions: a frozen Bun installation can accept an incompatible peer version.
 ## React compatibility
 
 Shared-store regressions exercise one native view across React and headless
-consumers, readiness cancellation, late opening, owner abort, and async close.
+consumers, explicit headless startup, readiness cancellation, late opening,
+owner abort, and async close. Native record and context integrations also
+start the public stores without subscriptions.
 Mutation tests cover caller guards after session replacement.
 
 Connection workflows cover shared wallet/vault guard progress, preserving a

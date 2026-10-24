@@ -8,7 +8,7 @@ export type ContextStore<Context> = Readonly<{
   subscribe(notify: () => void): () => void;
   /** Wait for usable contexts; cancelling this wait does not retire the catalog. */
   ready(options?: { signal?: AbortSignal }): Promise<Extract<ContextViewResult<Context>, { status: 'ready' }>>;
-  /** Reopen an active catalog; resolves when its native view attaches. */
+  /** Start or reopen the catalog; resolves when its native view attaches. */
   retry(): Promise<void>;
   /** Close permanently and wait for views already acquired to finish closing. */
   close(): Promise<void>;
@@ -19,7 +19,7 @@ export type ContextStoreOptions = {
   signal?: AbortSignal;
 };
 
-/** Subscription or ready() opens the catalog; it stays open until close() or abort. */
+/** Subscription, ready(), or retry() opens the catalog until close() or abort. */
 export function createContextStore<Context>(
   opener: ContextViewOpener<Context> | null,
   options: ContextStoreOptions = {},

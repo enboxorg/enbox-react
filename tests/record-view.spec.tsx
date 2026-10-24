@@ -9,6 +9,14 @@ import { RecordViewObserver } from '../src/internal/record-view-observer.js';
 import { ControlledView, deferred, subscribeObserver } from './helpers.js';
 
 describe('record view binding', () => {
+  it('requires a subscription before a hook-owned view can start', async () => {
+    const open = vi.fn(async () => new ControlledView(['private']));
+    const observer = new RecordViewObserver(open);
+    await expect(observer.retry()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    expect(open).not.toHaveBeenCalled();
+    await observer.close();
+  });
+
   it('still aborts and closes its view when binding cleanup throws', async () => {
     const failure = new Error('binding cleanup failed');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

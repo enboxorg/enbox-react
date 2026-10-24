@@ -23,6 +23,7 @@ describe('real Enbox context catalogs', () => {
     const typed = context.enbox.using(protocol);
     const store = createContextStore((signal) => typed.contexts.observe({ signal }));
     try {
+      await store.retry();
       await store.ready();
       expect(store.getSnapshot().contexts).toEqual([]);
       const notebook = await typed.records.create('notebook', { data: { title: 'Local notebook' } });

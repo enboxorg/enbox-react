@@ -39,9 +39,13 @@ The opener and protocol overloads of `useRecordView` and `useRecords` own
 their views. Each has independent pagination state and a view lifetime.
 Both hooks also borrow a `RecordStore` created with `createRecordStore`.
 Such a store is shared with headless controllers; its owner closes it or
-aborts its scope signal. The first subscriber or readiness waiter starts the
-view, and consumer unsubscription does not retire it. Supplied stores carry
+aborts its scope signal. The first subscriber, readiness waiter, or explicit
+`retry()` starts the view, and consumer unsubscription does not retire it. Supplied stores carry
 their own scope and need no provider.
+
+An owner can start either shared-store factory with `retry()` and await native
+view attachment without waiting for usable data. This does not reactivate an
+unsubscribed hook-owned view or reopen a closed, disabled, or aborted owner.
 
 `useContextView` and `createContextStore` apply the same ownership rules to
 native context catalogs. Both adapters share the internal view observer;

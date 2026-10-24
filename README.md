@@ -299,9 +299,14 @@ await notes.ready();
 React consumers use `useRecords(notes)` or `useRecordView(notes)`. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
-Construction is inert. The first subscriber or `ready()` starts the view,
-which stays open until the owner calls `notes.close()` or its lifetime signal
+Construction is inert. The first subscriber, `ready()`, or `retry()` starts
+the view, which stays open until the owner calls `notes.close()` or its lifetime signal
 aborts. Release controller subscriptions with `stop()` when retiring them.
+
+For headless startup, `await notes.retry()` starts and attaches the view without
+a temporary subscription or waiting for usable rows. Use `await notes.ready()`
+when startup needs the rows themselves. Concurrent calls during opening share
+that attempt. The same startup controls apply to `createContextStore` catalogs.
 
 The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
 opener overload `useRecordView(opener)` own a view for each hook instead.
