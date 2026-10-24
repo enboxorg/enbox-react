@@ -7,6 +7,61 @@ import { EnboxBindingChangedError } from '../src/errors.js';
 import { ControlledView, deferred } from './helpers.js';
 
 describe('shared record stores', () => {
+  it('starts without subscribers and shares attachment without waiting for usable rows', async () => {
+    const native = new ControlledView<string>();
+    native.publish({ status: 'loading', records: [], hasMore: false, current: false });
+    const opening = deferred<ControlledView<string>>();
+    const open = vi.fn(() => opening.promise);
+    const store = createRecordStore(open);
+    try {
+      expect(open).not.toHaveBeenCalled();
+      const first = store.retry();
+      expect(store.retry()).toBe(first);
+      await Promise.resolve();
+      expect(open).toHaveBeenCalledOnce();
+      opening.resolve(native);
+      await first;
+      expect(store.getSnapshot().status).toBe('loading');
+      expect(native.listeners.size).toBe(1);
+      native.publish({ status: 'ready', records: ['saved'], hasMore: false, current: true });
+      expect(store.getSnapshot().records).toEqual(['saved']);
+    } finally {
+      await store.close();
+    }
+    expect(native.close).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces a headless opening failure and allows another attempt', async () => {
+    const failure = new Error('opening failed');
+    const native = new ControlledView(['recovered']);
+    const open = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(native);
+    const store = createRecordStore<string>(open);
+    try {
+      await expect(store.retry()).rejects.toBe(failure);
+      expect(store.getSnapshot()).toMatchObject({ status: 'error', error: failure });
+      await store.retry();
+      expect(store.getSnapshot().records).toEqual(['recovered']);
+      expect(open).toHaveBeenCalledTimes(2);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it.each(['closed', 'aborted', 'disabled'] as const)('does not start a %s owner', async (state) => {
+    const lifetime = new AbortController();
+    const open = vi.fn(async () => new ControlledView(['private']));
+    const store = createRecordStore(state === 'disabled' ? null : open, { signal: lifetime.signal });
+    if (state === 'closed') await store.close();
+    if (state === 'aborted') lifetime.abort();
+    try {
+      await expect(store.retry()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+      expect(open).not.toHaveBeenCalled();
+      expect(store.getSnapshot().status).toBe('idle');
+    } finally {
+      await store.close();
+    }
+  });
+
   it('waits for acquired view cleanup when its owner closes it', async () => {
     const native = new ControlledView(['saved']);
     const cleanup = deferred<void>();

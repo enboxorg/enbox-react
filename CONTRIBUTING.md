@@ -16,7 +16,8 @@ packed SDK instead.
 | `bun run test` | Run unit, React, and native local DWN tests. |
 | `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
-| `bun run check` | Run type checks, unit/integration tests, and package checks. |
+| `bun run audit` | Audit all locked runtime and development dependencies; every advisory fails the check. |
+| `bun run check` | Run the dependency audit, type checks, unit/integration tests, and package checks. |
 | `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
 | `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
 | `bun run starter:dev` | Install the canonical starter's frozen npm dependencies and serve it with Vite. |
@@ -64,6 +65,7 @@ Root development dependencies support only SDK compilation and tests.
 | Development dependencies | Use |
 | --- | --- |
 | `@enbox/api` | Native DWN integration fixtures through `@enbox/api/testing`. |
+| `@enbox/browser` | Compile and test against the exact browser SDK declared as a peer. |
 | `vitest`, `@testing-library/react`, `@testing-library/dom`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
 | `@playwright/test` | Production browser tests. |
 | `typescript`, `@types/react`, `@types/use-sync-external-store` | Compilation, declarations, and type contracts. |
@@ -108,8 +110,14 @@ node --input-type=module -e "import { packSdk } from './scripts/pack-sdk.mjs'; p
 bun install --cwd tests/compatibility/starter --lockfile-only --ignore-scripts --force
 ```
 
-`--force` refreshes the local archive metadata. Review the lockfile diff and
+`--force` requests fresh registry data. Review the lockfile diff and
 accept registry version changes only when intended.
+
+When the SDK's dependencies or peers change, Bun can retain the previous
+metadata at a reused archive path despite `--force`. Refresh that entry using
+the immutable archive returned by `packSdk`, then restore the fixture's stable
+archive placeholder. The consumer checks compare this metadata with the SDK
+before installing.
 
 For an intentional dependency change, edit the exact version in
 `package.json`, temporarily set `install.frozenLockfile = false` in
@@ -119,12 +127,19 @@ manifest and lockfile together. Do not commit relaxed installation settings.
 
 ## Preview publication
 
+When React work needs native SDK changes, complete the known native changes
+as one batch and validate the combined SDKs with local packages before
+requesting publication. Then pin the actual supporting releases in React and
+refresh its locked consumers. Publishing native packages should not be a
+prerequisite for testing intermediate changes.
+
 Set a new exact package version before each release. The manual
 `Publish preview` GitHub workflow runs only on `main`. It verifies both
 React versions and the production starter, then publishes the same
 archive used by the React 18 consumer checks to the `next` npm tag with
-provenance. Configure `NPM_TOKEN` in the repository's Actions secrets with
-publish access to `@enbox/react`.
+provenance. Configure npm trusted publishing for `@enbox/react` using this
+repository and `publish.yml`, or provide an `NPM_TOKEN` Actions secret with
+publish access. npm handles authentication directly.
 
 Dispatch the workflow after merging the release change:
 
@@ -135,5 +150,7 @@ gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
 The generator is a separate npm package, `@enbox/create-dapp`. After approval,
 dispatch `publish-create-dapp.yml` on `main`. It runs SDK and generator checks,
 verifies the generated app, and publishes that tested generator archive to
-`latest` with provenance. `NPM_TOKEN` needs access to this package too. Merging
-changes does not publish either package automatically.
+`latest` with provenance. Configure its npm trusted publisher with
+`publish-create-dapp.yml`, or give `NPM_TOKEN` access to this package too. A
+package's first publication can use the token before its trusted publisher is
+configured. Merging changes does not publish either package automatically.

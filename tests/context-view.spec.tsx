@@ -41,6 +41,45 @@ class ControlledContextView<Context> implements ContextView<Context> {
 }
 
 describe('owned context views', () => {
+  it('starts a shared catalog without subscribers or waiting for ready contexts', async () => {
+    const view = new ControlledContextView<string>();
+    view.publish({ status: 'loading', contexts: [] });
+    const opening = deferred<ControlledContextView<string>>();
+    const open = vi.fn(() => opening.promise);
+    const store = createContextStore(open);
+    try {
+      expect(open).not.toHaveBeenCalled();
+      const first = store.retry();
+      expect(store.retry()).toBe(first);
+      await Promise.resolve();
+      expect(open).toHaveBeenCalledOnce();
+      opening.resolve(view);
+      await first;
+      expect(store.getSnapshot().status).toBe('loading');
+      expect(view.listeners.size).toBe(1);
+      view.publish({ status: 'ready', contexts: ['saved'] });
+      expect(store.getSnapshot().contexts).toEqual(['saved']);
+    } finally {
+      await store.close();
+    }
+    expect(view.close).toHaveBeenCalledOnce();
+  });
+
+  it.each(['closed', 'aborted', 'disabled'] as const)('does not start a %s shared catalog', async (state) => {
+    const lifetime = new AbortController();
+    const open = vi.fn(async () => new ControlledContextView(['private']));
+    const store = createContextStore(state === 'disabled' ? null : open, { signal: lifetime.signal });
+    if (state === 'closed') await store.close();
+    if (state === 'aborted') lifetime.abort();
+    try {
+      await expect(store.retry()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+      expect(open).not.toHaveBeenCalled();
+      expect(store.getSnapshot().status).toBe('idle');
+    } finally {
+      await store.close();
+    }
+  });
+
   it('opens after subscription and preserves native loading, ready, and error snapshots', async () => {
     const view = new ControlledContextView(['saved']);
     view.publish({ status: 'loading', contexts: [] });

@@ -1,5 +1,5 @@
 import type { ConnectionSnapshot, ConnectionStore, Enbox, RecordView, RecordViewState } from '@enbox/browser';
-import { AuthSession, ConnectDeniedError } from '@enbox/browser';
+import { AgentSession, ConnectDeniedError } from '@enbox/browser';
 import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -88,8 +88,8 @@ const client = {
     if (parameters.has('deny')) return publish({ phase: 'disconnected', error: new ConnectDeniedError() });
     sessionLifetime = new AbortController();
     const did = 'did:example:alice';
-    const session = new AuthSession({
-      agent: {} as AuthSession['agent'], did, signal: sessionLifetime.signal,
+    const session = new AgentSession({
+      agent: {} as AgentSession['agent'], did, signal: sessionLifetime.signal,
       identity: { didUri: did, name: 'Alice' },
     });
     const walletReapprovalRequired = needsRepair;

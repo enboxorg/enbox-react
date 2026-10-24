@@ -38,7 +38,7 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
   }
 
   const walletOptions = options.connectHandler === undefined ? Object.freeze({ ...options.wallet }) : undefined;
-  const connectHandler = options.connectHandler ?? createWalletConnectHandler(walletOptions);
+  const connectHandler = options.connectHandler ?? BrowserConnectHandler(walletOptions);
 
   const client = createConnectionStore({
     ...options.connection,
@@ -47,20 +47,4 @@ export function createEnboxClient(options: CreateEnboxClientOptions): Connection
   });
   if (walletOptions !== undefined) walletOptionsByClient.set(client, walletOptions);
   return client;
-}
-
-/** Resolve browser URLs when approval starts, so configuration stays inert. */
-export function createWalletConnectHandler(options: BrowserConnectHandlerOptions = {}): ConnectHandler {
-  const wallet = { ...options };
-  return {
-    requestAccess: (request) => {
-      const appIcon = wallet.appIcon === undefined
-        ? undefined
-        : new URL(wallet.appIcon, window.location.origin).href;
-      return BrowserConnectHandler({
-        ...wallet,
-        ...(appIcon === undefined ? {} : { appIcon }),
-      }).requestAccess(request);
-    },
-  };
 }

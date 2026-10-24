@@ -1,6 +1,6 @@
 import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
 
-import { AuthSession } from '@enbox/browser';
+import { AgentSession } from '@enbox/browser';
 import { onTestFinished, vi } from 'vitest';
 
 /** Release manually subscribed observers even when an assertion fails. */
@@ -45,8 +45,8 @@ export function controlledClient(initial: ConnectionSnapshot = { phase: 'disconn
 export function connected(
   enbox: Enbox = facade(), did = 'did:example:alice', lifetime = new AbortController(),
 ): Extract<ConnectionSnapshot, { phase: 'connected' }> {
-  const session = new AuthSession({
-    agent: {} as AuthSession['agent'],
+  const session = new AgentSession({
+    agent: {} as AgentSession['agent'],
     did,
     signal: lifetime.signal,
     identity: { didUri: did, name: did },

@@ -94,6 +94,12 @@ describe('connection bindings', () => {
     hook.rerender();
     expect(hook.result.current).toBe(actions);
     expect(await actions.connect()).toBe(client.getSnapshot());
+    client.connectVault.mockImplementation(function (this: typeof client) {
+      return Promise.resolve(this.getSnapshot());
+    });
+    const vaultOptions = { password: 'test-only', createIdentity: true };
+    expect(await actions.connectVault(vaultOptions)).toBe(client.getSnapshot());
+    expect(client.connectVault).toHaveBeenCalledExactlyOnceWith(vaultOptions);
     await actions.retryRemote('https://example.test');
     expect(client.retryRemote).toHaveBeenCalledWith('https://example.test');
   });

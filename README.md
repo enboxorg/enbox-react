@@ -47,7 +47,7 @@ Runtime and development dependencies use exact versions; peers accept only
 the explicitly tested releases. Bun defaults to exact saves, frozen lockfile
 installs, and no automatic runtime installs;
 npm also saves exact versions. The current peer pins are `@enbox/browser`
-`0.3.79` and React `18.3.1` or `19.3.0`. Development setup and intentional
+`0.3.82` and React `18.3.1` or `19.3.0`. Development setup and intentional
 version changes are documented in
 [CONTRIBUTING.md](https://github.com/enboxorg/enbox-react/blob/main/CONTRIBUTING.md).
 
@@ -134,7 +134,11 @@ on the server, and retain a browser instance for the application lifetime.
 Pass client components through your framework's client boundary; store
 instances and codec-bearing manifests are not serializable RSC props.
 
-## Connect a wallet
+## Connect a wallet or local vault
+
+`useEnboxConnection` is the default React path for wallet `connect()`, local
+`connectVault()`, and `disconnect()`. They share provider-scoped progress,
+errors, application guards, and lifecycle checks.
 
 ```tsx
 import { useEnboxConnection } from '@enbox/react';
@@ -148,18 +152,42 @@ function WalletButton() {
 }
 ```
 
-This hook provides usable connection state, wallet repair, shared progress,
-and actions that reject actionable failures while treating denial quietly.
-Native `useConnection` and `useConnectionActions` remain available for raw
-snapshot outcomes. A per-call `connect({ wallet: options })` inherits the
+The hook provides usable connection state and wallet repair. Its actions reject
+actionable failures while treating wallet denial quietly.
+A per-call `connect({ wallet: options })` inherits the
 client factory's wallet defaults while changing the wallet route, for both
 configured and existing clients. Explicit per-call fields override those defaults.
 For a native store created outside `createEnboxClient`, supply the app identity
 in the per-call wallet options.
 
-Pass `beforeConnect` or `beforeDisconnect` to the provider for application
-guards, such as saving edits. Disconnect progress includes the guard. Failed
-guards preserve the connected session. An explicit
+For an application-owned HD vault, use the same hook with native vault options:
+
+```tsx
+function LocalVaultButton({ password }: { password: string }) {
+  const connection = useEnboxConnection();
+  return <button disabled={connection.isConnecting || connection.isDisconnecting}
+    onClick={() => { void connection.connectVault({ password, createIdentity: true }).catch(reportError); }}>
+    Use local vault
+  </button>;
+}
+```
+
+`createIdentity: true` creates a default identity when none exists; the native
+default is false. Local vault ownership still supports native sync. Collect
+the password in application UI, pass it per call, or configure native
+`connection.password` / `connection.passwordProvider` defaults for connection
+and restoration. Read native session data through `useConnection`, including
+the optional `snapshot.session?.recoveryPhrase` from first-time vault setup.
+Recovery-phrase display and acknowledgment belong to the application;
+phrase import is a separate native workflow, not a `connectVault` option.
+
+Both connect methods share one pending operation; concurrent calls join the
+first action and its options. Pass `beforeConnect` or `beforeDisconnect` to
+the provider for application guards, such as saving edits. `beforeConnect`
+receives `{ action, options, snapshot }`: `action` is `connect` or `connectVault`,
+and narrowing it also narrows `options` to `ConnectOptions` or native
+`VaultConnectOptions`, respectively. Options can be undefined. Disconnect
+progress includes its guard. Failed guards preserve the connected session. An explicit
 `disconnect({ skipBeforeDisconnect: true })` bypasses that guard; the host
 owns the decision and its UI. Binding changes during an awaited guard prevent
 the action from targeting a replacement identity.
@@ -271,9 +299,14 @@ await notes.ready();
 React consumers use `useRecords(notes)` or `useRecordView(notes)`. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
-Construction is inert. The first subscriber or `ready()` starts the view,
-which stays open until the owner calls `notes.close()` or its lifetime signal
+Construction is inert. The first subscriber, `ready()`, or `retry()` starts
+the view, which stays open until the owner calls `notes.close()` or its lifetime signal
 aborts. Release controller subscriptions with `stop()` when retiring them.
+
+For headless startup, `await notes.retry()` starts and attaches the view without
+a temporary subscription or waiting for usable rows. Use `await notes.ready()`
+when startup needs the rows themselves. Concurrent calls during opening share
+that attempt. The same startup controls apply to `createContextStore` catalogs.
 
 The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
 opener overload `useRecordView(opener)` own a view for each hook instead.
@@ -384,7 +417,7 @@ also keeps an abandoned render from replacing a committed callback.
 | Hook | Contract |
 | --- | --- |
 | `useConnection(selector?, isEqual?)` | Native connection snapshot or a selected slice. |
-| `useConnectionActions()` | Stable native actions, including initialization retry and remote recovery. Flow errors resolve in snapshots. |
+| `useConnectionActions()` | Stable native actions, including `connectVault`, initialization retry, and remote recovery. Flow errors resolve in snapshots. |
 | `useEnboxClient()` | Borrowed native connection store. |
 | `useEnbox()` | Published facade, including a valid retained repair session. |
 | `useIdentity()` | Current session identity metadata. |
@@ -393,6 +426,10 @@ also keeps an abandoned render from replacing a committed callback.
 | `useObservableStore(store, fallback, selector?, isEqual?)` | Borrow an observable; select and compare a slice without a caller-maintained result cache. |
 | `useRecordView(opener)` | Owns a view opened by a memoized callback receiving an abort signal; `null` releases it. |
 | `useContextView(opener)` | Owns a native context catalog, or borrows a shared context store; `null` releases the selection. |
+
+`useConnectionActions` is an advanced native binding. Its connect/disconnect
+actions return raw snapshots and bypass the provider's application guards and
+workflow presentation. Use `useEnboxConnection` for guarded React UI actions.
 
 The [architecture](https://github.com/enboxorg/enbox-react/blob/main/docs/architecture.md)
 describes connection bindings, resource ownership, query identity, and async

@@ -1,4 +1,4 @@
-import type { ConnectionSnapshot } from '@enbox/browser';
+import type { ConnectionSnapshot, VaultConnectOptions } from '@enbox/browser';
 import type { PropsWithChildren } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,88 @@ import { ConnectionController } from '../src/internal/connection-controller.js';
 import { connected, controlledClient, deferred, facade } from './helpers.js';
 import { ConnectDeniedError } from '@enbox/browser';
 
+const connectActions = ['connect', 'connectVault'] as const;
+
 describe('dapp connection workflow', () => {
+  it('forwards vault options and identifies the guarded action', async () => {
+    const initial = connected();
+    const { client } = controlledClient(initial);
+    const beforeConnect = vi.fn();
+    const options: VaultConnectOptions = { password: 'test-only', createIdentity: true, metadata: { name: 'Local' } };
+    const hook = renderHook(useEnboxConnection, {
+      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+    });
+    const controls = hook.result.current;
+    hook.rerender();
+    expect(hook.result.current.connectVault).toBe(controls.connectVault);
+    await act(async () => { await controls.connectVault(options); });
+    expect(beforeConnect).toHaveBeenCalledExactlyOnceWith({ action: 'connectVault', snapshot: initial, options });
+    expect(client.connectVault).toHaveBeenCalledExactlyOnceWith(options);
+    expect(client.connect).not.toHaveBeenCalled();
+  });
+
+  it.each(connectActions)('coalesces wallet and vault calls when %s starts first', async (action) => {
+    const { client } = controlledClient();
+    const guard = deferred<void>();
+    const beforeConnect = vi.fn(() => guard.promise);
+    const hook = renderHook(() => [useEnboxConnection(), useEnboxConnection()] as const, {
+      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+    });
+    const other = action === 'connect' ? 'connectVault' : 'connect';
+    let first!: Promise<void>; let second!: Promise<void>;
+    act(() => { first = hook.result.current[0][action](); second = hook.result.current[1][other](); });
+    expect(first).toBe(second);
+    expect(hook.result.current.every((connection) => connection.isConnecting)).toBe(true);
+    await act(async () => { await Promise.resolve(); guard.resolve(); await first; });
+    expect(beforeConnect).toHaveBeenCalledExactlyOnceWith({ action, snapshot: client.getSnapshot(), options: undefined });
+    expect(client[action]).toHaveBeenCalledOnce();
+    expect(client[other]).not.toHaveBeenCalled();
+    expect(hook.result.current.every((connection) => !connection.isConnecting)).toBe(true);
+  });
+
+  it.each(connectActions)('rejects a failed %s guard without issuing native work', async (action) => {
+    const initial = connected();
+    const { client } = controlledClient(initial);
+    const failure = new Error('save failed');
+    const hook = renderHook(useEnboxConnection, {
+      wrapper: ({ children }) => <EnboxProvider client={client}
+        beforeConnect={async () => { throw failure; }}>{children}</EnboxProvider>,
+    });
+    await act(async () => { await expect(hook.result.current[action]()).rejects.toBe(failure); });
+    expect(client.connect).not.toHaveBeenCalled();
+    expect(client.connectVault).not.toHaveBeenCalled();
+    expect(client.getSnapshot()).toBe(initial);
+    expect(hook.result.current.connectionError).toBe(failure);
+    expect(hook.result.current.isConnecting).toBe(false);
+  });
+
+  it.each([new Error('vault password rejected'), new ConnectDeniedError()])(
+    'rejects a vault failure despite retained wallet repair metadata: %s', async (failure) => {
+      const initial = { ...connected(), connection: { state: 'expired' }, walletReapprovalRequired: true } as const;
+      const { client, publish } = controlledClient(initial);
+      const issued = deferred<ConnectionSnapshot>();
+      client.connectVault.mockImplementationOnce(async () => {
+        const outcome = await issued.promise;
+        publish(outcome);
+        return outcome;
+      });
+      const hook = renderHook(useEnboxConnection, {
+        wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+      });
+      let pending!: Promise<void>;
+      act(() => { pending = hook.result.current.connectVault(); });
+      const rejected = expect(pending).rejects.toBe(failure);
+      await act(async () => { await Promise.resolve(); });
+      expect(client.connectVault).toHaveBeenCalledOnce();
+      expect(hook.result.current.isConnecting).toBe(true);
+      expect(hook.result.current.walletRepair).toEqual({ reason: 'expired', status: 'required' });
+      await act(async () => { issued.resolve({ ...initial, error: failure }); await rejected; });
+      expect(hook.result.current.isConnecting).toBe(false);
+      expect(hook.result.current.connectionError).toBe(failure);
+      expect(client.connect).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([false, true])('releases a reentrant replacement subscription (cleanup throws: %s)', (throws) => {
     const { client, listeners } = controlledClient();
     const failure = new Error('unsubscribe failed');
@@ -47,25 +128,25 @@ describe('dapp connection workflow', () => {
     }
   });
 
-  it('requires a live lease after its first retain while allowing deferred cleanup to be reclaimed', async () => {
+  it.each(connectActions)('requires a live lease after its first retain while allowing deferred cleanup to be reclaimed (%s)', async (action) => {
     const { client } = controlledClient();
     const controller = new ConnectionController(client);
-    await controller.connect(undefined, {});
+    await controller[action](undefined, {});
     const release = controller.retain();
     release();
-    const unavailable = expect(controller.connect(undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    const unavailable = expect(controller[action](undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
     const releaseAgain = controller.retain();
     await unavailable;
     expect(controller.isRetired()).toBe(false);
-    await controller.connect(undefined, {});
-    expect(client.connect).toHaveBeenCalledTimes(2);
+    await controller[action](undefined, {});
+    expect(client[action]).toHaveBeenCalledTimes(2);
     releaseAgain();
     await Promise.resolve();
     expect(controller.isRetired()).toBe(true);
-    await expect(controller.connect(undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    await expect(controller[action](undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
   });
 
-  it('retires an existing-client provider guard and rejects its captured controls without disposing the client', async () => {
+  it.each(connectActions)('retires an existing-client provider guard and rejects its captured controls without disposing the client (%s)', async (action) => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();
     const beforeConnect = vi.fn(() => saving.promise);
@@ -74,15 +155,15 @@ describe('dapp connection workflow', () => {
     });
     const captured = hook.result.current;
     let connecting!: Promise<void>;
-    act(() => { connecting = captured.connect(); });
+    act(() => { connecting = captured[action](); });
     const rejected = expect(connecting).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await act(async () => { await Promise.resolve(); });
     expect(beforeConnect).toHaveBeenCalledOnce();
     await act(async () => { hook.unmount(); await Promise.resolve(); await rejected; });
     await act(async () => { saving.resolve(); await Promise.resolve(); });
-    expect(client.connect).not.toHaveBeenCalled();
+    expect(client[action]).not.toHaveBeenCalled();
     expect(client.dispose).not.toHaveBeenCalled();
-    await expect(captured.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    await expect(captured[action]()).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await expect(captured.disconnect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await expect(captured.refreshDwnEndpoints()).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await expect(captured.retryRemote('https://remote.test')).rejects.toBeInstanceOf(EnboxBindingChangedError);
@@ -108,23 +189,23 @@ describe('dapp connection workflow', () => {
     expect(client.dispose).not.toHaveBeenCalled();
   });
 
-  it('keeps the workflow alive when its last hook consumer leaves a mounted provider', async () => {
+  it.each(connectActions)('keeps the workflow alive when its last hook consumer leaves a mounted provider (%s)', async (action) => {
     const { client } = controlledClient();
     const saving = deferred<void>();
     let connection!: ReturnType<typeof useEnboxConnection>;
     function Consumer() { connection = useEnboxConnection(); return null; }
     const tree = render(<EnboxProvider client={client} beforeConnect={() => saving.promise}><Consumer /></EnboxProvider>);
     let connecting!: Promise<void>;
-    act(() => { connecting = connection.connect(); });
+    act(() => { connecting = connection[action](); });
     await act(async () => { await Promise.resolve(); });
     tree.rerender(<EnboxProvider client={client} beforeConnect={() => saving.promise}>{null}</EnboxProvider>);
     await act(async () => { saving.resolve(); await connecting; });
-    expect(client.connect).toHaveBeenCalledOnce();
+    expect(client[action]).toHaveBeenCalledOnce();
     expect(client.dispose).not.toHaveBeenCalled();
     tree.unmount();
   });
 
-  it('retires pending commands on client replacement even when both clients publish the same binding', async () => {
+  it.each(connectActions)('retires pending commands on client replacement even when both clients publish the same binding (%s)', async (action) => {
     const initial = connected();
     const first = controlledClient(initial);
     const second = controlledClient(initial);
@@ -136,22 +217,22 @@ describe('dapp connection workflow', () => {
     });
     const captured = hook.result.current;
     let connecting!: Promise<void>;
-    act(() => { connecting = captured.connect(); });
+    act(() => { connecting = captured[action](); });
     const rejected = expect(connecting).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await act(async () => { await Promise.resolve(); });
     selected = second.client;
     await act(async () => { hook.rerender(); await Promise.resolve(); });
     await rejected;
-    await act(async () => { await hook.result.current.connect(); });
-    expect(second.client.connect).toHaveBeenCalledOnce();
+    await act(async () => { await hook.result.current[action](); });
+    expect(second.client[action]).toHaveBeenCalledOnce();
     await act(async () => { saving.resolve(); await Promise.resolve(); });
-    expect(first.client.connect).not.toHaveBeenCalled();
-    await expect(captured.connect()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    expect(first.client[action]).not.toHaveBeenCalled();
+    await expect(captured[action]()).rejects.toBeInstanceOf(EnboxBindingChangedError);
     expect(first.client.dispose).not.toHaveBeenCalled();
     expect(second.client.dispose).not.toHaveBeenCalled();
   });
 
-  it.each(['connect', 'disconnect'] as const)('preserves an issued native %s outcome after provider retirement', async (action) => {
+  it.each(['connect', 'connectVault', 'disconnect'] as const)('preserves an issued native %s outcome after provider retirement', async (action) => {
     const { client } = controlledClient(connected());
     const issued = deferred<ReturnType<typeof client.getSnapshot>>();
     client[action].mockReturnValueOnce(issued.promise);
@@ -173,7 +254,7 @@ describe('dapp connection workflow', () => {
     expect(client.dispose).not.toHaveBeenCalled();
   });
 
-  it('does not start approval through a session aborted during a save guard', async () => {
+  it.each(connectActions)('blocks %s when the session aborts during its guard', async (action) => {
     const lifetime = new AbortController();
     const { client } = controlledClient(connected(facade(), 'did:example:alice', lifetime));
     const saving = deferred<void>();
@@ -181,50 +262,50 @@ describe('dapp connection workflow', () => {
       wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={() => saving.promise}>{children}</EnboxProvider>,
     });
     let connecting!: Promise<void>;
-    act(() => { connecting = hook.result.current.connect(); });
+    act(() => { connecting = hook.result.current[action](); });
     const rejected = expect(connecting).rejects.toBeInstanceOf(EnboxBindingChangedError);
     await act(async () => { await Promise.resolve(); });
     lifetime.abort();
     await act(async () => { saving.resolve(); await rejected; });
-    expect(client.connect).not.toHaveBeenCalled();
+    expect(client[action]).not.toHaveBeenCalled();
   });
 
-  it('preserves the provider workflow through StrictMode replay', async () => {
+  it.each(connectActions)('preserves the provider workflow through StrictMode replay (%s)', async (action) => {
     const { client } = controlledClient(connected());
     const hook = renderHook(useEnboxConnection, { reactStrictMode: true,
       wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
     });
-    await act(async () => { await Promise.resolve(); await hook.result.current.connect(); });
-    expect(client.connect).toHaveBeenCalledOnce();
+    await act(async () => { await Promise.resolve(); await hook.result.current[action](); });
+    expect(client[action]).toHaveBeenCalledOnce();
     expect(client.dispose).not.toHaveBeenCalled();
   });
 
-  it('does not start approval after disconnect supersedes a pending connect guard', async () => {
+  it.each(connectActions)('does not issue %s after disconnect supersedes its guard', async (action) => {
     const { client } = controlledClient();
     const guard = deferred<void>();
     const hook = renderHook(useEnboxConnection, {
       wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={() => guard.promise}>{children}</EnboxProvider>,
     });
     let pending!: Promise<void>;
-    act(() => { pending = hook.result.current.connect(); });
+    act(() => { pending = hook.result.current[action](); });
     await act(async () => { await hook.result.current.disconnect(); await pending; });
     expect(hook.result.current.isConnecting).toBe(false);
     await act(async () => { guard.resolve(); await Promise.resolve(); });
-    expect(client.connect).not.toHaveBeenCalled();
+    expect(client[action]).not.toHaveBeenCalled();
   });
 
-  it('keeps the native connect outcome when its invocation synchronously starts disconnect', async () => {
+  it.each(connectActions)('keeps the native connect outcome when its invocation synchronously starts disconnect (%s)', async (action) => {
     const { client } = controlledClient();
     const controller = new ConnectionController(client);
     const approval = deferred<ReturnType<typeof client.getSnapshot>>();
     const started = deferred<void>();
     let disconnecting!: Promise<void>;
-    client.connect.mockImplementationOnce(() => {
+    client[action].mockImplementationOnce(() => {
       disconnecting = controller.disconnect(undefined, {});
       started.resolve();
       return approval.promise;
     });
-    const outcome = controller.connect(undefined, {}).catch((cause: unknown) => cause);
+    const outcome = controller[action](undefined, {}).catch((cause: unknown) => cause);
     await started.promise;
     await disconnecting;
     const failure = new Error('issued approval failed');
@@ -232,22 +313,22 @@ describe('dapp connection workflow', () => {
     expect(await outcome).toBe(failure);
   });
 
-  it('preserves an issued approval outcome when a disconnect guard fails', async () => {
+  it.each(connectActions)('preserves an issued %s outcome when a disconnect guard fails', async (action) => {
     const { client } = controlledClient();
     const issued = deferred<ReturnType<typeof client.getSnapshot>>();
     const saving = deferred<void>();
-    client.connect.mockReturnValueOnce(issued.promise);
+    client[action].mockReturnValueOnce(issued.promise);
     const hook = renderHook(useEnboxConnection, {
       wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
     });
     let connecting!: Promise<void>;
     let settled = false;
     act(() => {
-      connecting = hook.result.current.connect();
+      connecting = hook.result.current[action]();
       void connecting.then(() => { settled = true; }, () => { settled = true; });
     });
     await act(async () => { await Promise.resolve(); });
-    expect(client.connect).toHaveBeenCalledOnce();
+    expect(client[action]).toHaveBeenCalledOnce();
     let disconnecting!: Promise<void>;
     act(() => { disconnecting = hook.result.current.disconnect(); });
     const saveFailure = new Error('save failed');
@@ -263,7 +344,7 @@ describe('dapp connection workflow', () => {
     expect(hook.result.current.isConnecting).toBe(false);
   });
 
-  it('does not publish repair progress or run a guard after initialization outlives a cancelled connect', async () => {
+  it.each(connectActions)('does not publish repair progress or run a guard after initialization outlives a cancelled connect (%s)', async (action) => {
     const { client, publish } = controlledClient({ phase: 'initializing' });
     const initialization = deferred<ReturnType<typeof client.getSnapshot>>();
     const disconnectGuard = deferred<void>();
@@ -276,7 +357,7 @@ describe('dapp connection workflow', () => {
       </EnboxProvider>,
     });
     let connecting!: Promise<void>;
-    act(() => { connecting = hook.result.current.connect(); });
+    act(() => { connecting = hook.result.current[action](); });
     await act(async () => { await Promise.resolve(); });
     expect(client.initialize).toHaveBeenCalledOnce();
     let disconnecting!: Promise<void>;
@@ -293,7 +374,7 @@ describe('dapp connection workflow', () => {
       await Promise.resolve();
     });
     expect(beforeConnect).not.toHaveBeenCalled();
-    expect(client.connect).not.toHaveBeenCalled();
+    expect(client[action]).not.toHaveBeenCalled();
     expect(hook.result.current.isConnecting).toBe(false);
     expect(hook.result.current.walletRepair).toEqual({ reason: 'expired', status: 'required' });
     await act(async () => { disconnectGuard.resolve(); await disconnected; });
@@ -361,20 +442,23 @@ describe('dapp connection workflow', () => {
     expect(client.disconnect).toHaveBeenCalledWith({});
   });
 
-  it('does not disconnect a replacement identity after an awaited guard', async () => {
-    const { client, publish } = controlledClient(connected());
-    const saving = deferred<void>();
-    const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
-    });
-    let result!: Promise<void>;
-    act(() => { result = hook.result.current.disconnect(); });
-    const rejected = expect(result).rejects.toBeInstanceOf(EnboxBindingChangedError);
-    act(() => publish(connected(facade(), 'did:example:bob')));
-    await act(async () => { saving.resolve(); await rejected; });
-    expect(client.disconnect).not.toHaveBeenCalled();
-    expect(hook.result.current.did).toBe('did:example:bob');
-  });
+  it.each(['connect', 'connectVault', 'disconnect'] as const)(
+    'does not issue %s against a replacement identity after an awaited guard', async (action) => {
+      const { client, publish } = controlledClient(connected());
+      const saving = deferred<void>();
+      const hook = renderHook(useEnboxConnection, {
+        wrapper: ({ children }) => <EnboxProvider client={client}
+          beforeConnect={() => saving.promise} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
+      });
+      let result!: Promise<void>;
+      act(() => { result = hook.result.current[action](); });
+      const rejected = expect(result).rejects.toBeInstanceOf(EnboxBindingChangedError);
+      act(() => publish(connected(facade(), 'did:example:bob')));
+      await act(async () => { saving.resolve(); await rejected; });
+      expect(client[action]).not.toHaveBeenCalled();
+      expect(hook.result.current.did).toBe('did:example:bob');
+    },
+  );
 
   it('keeps denial quiet while rejecting actionable native connect errors', async () => {
     const { client, publish } = controlledClient();
