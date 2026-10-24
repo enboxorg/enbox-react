@@ -32,7 +32,6 @@ jobs:
       - run: bun run check
       - run: node scripts/test-react18.mjs
       - run: bunx --no-install playwright install --with-deps --only-shell chromium
-        timeout-minutes: 4
       - run: node scripts/test-starter.mjs
       - name: Publish the tested archive
         env:

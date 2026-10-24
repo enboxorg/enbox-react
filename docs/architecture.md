@@ -248,7 +248,8 @@ metadata and reject a different direct parent. The native SDK retains missing
 record, encryption, validation, authorization, and conflict behavior.
 
 `mutate` handles its returned rejection after state has recorded the error;
-`mutateAsync` and existing `run` preserve the native outcome. Convenience query
+`mutateAsync` and existing `run` preserve the native outcome when no success
+handler is supplied. Convenience query
 controls similarly mark their returned Promise handled without changing what
 an awaiting caller receives. These hooks add no mutation retries or optimistic rows. Ordinary domain hook modules fix protocol paths and scopes;
 they are normal static React hooks rather than dynamically generated hooks.
@@ -267,3 +268,9 @@ shared views use explicit owner stores. Selectors read those stores without
 another native observer. CI builds declarations once in `check`; consumer
 scripts use those same outputs. Standalone public consumer commands still build
 before packing.
+
+Borrowed view overloads preserve both live and server snapshot types. A field
+available only on a live custom snapshot is not promised during SSR/hydration.
+Owner stores that expose selection metadata in both snapshots retain that field.
+The record hook adds its own pagination control, replacing a same-named custom
+snapshot field in both the runtime result and its type.

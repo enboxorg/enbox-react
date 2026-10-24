@@ -81,10 +81,14 @@ export type RecordsResult<Item> = RecordViewResult<Item> & Readonly<{
   loadMore: () => Promise<void>;
 }>;
 
+type PaginatedSnapshot<Snapshot> = Snapshot extends unknown
+  ? Omit<Snapshot, 'loadMore'> & Pick<RecordStore<unknown>, 'loadMore'>
+  : never;
+
 /** Borrow a shared store without requiring a provider or closing the store. */
-export function useRecords<Store extends RecordStore<unknown>>(store: Store): ReturnType<Store['getSnapshot']> & Readonly<{
-  loadMore: () => Promise<void>;
-}>;
+export function useRecords<Store extends RecordStore<unknown>>(store: Store): PaginatedSnapshot<
+  ReturnType<Store['getSnapshot']> | ReturnType<Store['getServerSnapshot']>
+>;
 export function useRecords<Item>(store: RecordStore<Item> | null): RecordsResult<Item>;
 /** Observe a bounded protocol selection; null options or enabled: false release its view. */
 export function useRecords<

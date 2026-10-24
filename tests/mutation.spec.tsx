@@ -28,6 +28,31 @@ describe('session-bound mutations', () => {
     expect(hook.result.current.run).toBe(hook.result.current.mutateAsync);
   });
 
+  it('runs each current invocation handler even when native writes settle in reverse order', async () => {
+    const { client } = controlledClient(connected());
+    const writes = { first: deferred<string>(), second: deferred<string>() };
+    const firstHandler = vi.fn();
+    const secondHandler = vi.fn();
+    const hook = renderHook(() => useEnboxMutation((_enbox: Enbox, key: keyof typeof writes) => writes[key].promise), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    let first!: Promise<string>;
+    let second!: Promise<string>;
+    act(() => {
+      first = hook.result.current.mutateAsync('first', { onSuccess: firstHandler });
+      second = hook.result.current.mutateAsync('second', { onSuccess: secondHandler });
+    });
+    await act(async () => { writes.second.resolve('second saved'); await second; });
+    expect(secondHandler).toHaveBeenCalledWith('second saved', 'second');
+    expect(firstHandler).not.toHaveBeenCalled();
+    expect(hook.result.current.pendingCount).toBe(1);
+    await act(async () => { writes.first.resolve('first saved'); await first; });
+    expect(firstHandler).toHaveBeenCalledWith('first saved', 'first');
+    expect(firstHandler).toHaveBeenCalledOnce();
+    expect(secondHandler).toHaveBeenCalledOnce();
+    expect(hook.result.current.pendingCount).toBe(0);
+  });
+
   it('surfaces success-handler failures without retrying an already committed operation', async () => {
     const { client } = controlledClient(connected());
     const error = new Error('UI handler failed');

@@ -51,6 +51,7 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
   // The function captures this render's operation. No ref is changed during render.
   const run = useCallback(
     (variables: Variables, options?: EnboxMutationCallOptions<Variables, Result>): Promise<Result> => {
+      if (options === undefined) return observer.run(operation, variables);
       const isCurrent = observer.captureGuard();
       return observer.run(async (enbox, input) => {
         const onSuccess = options?.onSuccess;

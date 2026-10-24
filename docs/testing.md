@@ -118,3 +118,7 @@ public type contracts; React Activity is exercised only by the React 19 suite.
 The generated consumer lives in `.artifacts`, and all registry dependencies
 are frozen by the fixture's committed lockfile. Only the local SDK archive
 checksum is refreshed as its source changes.
+
+Browser tests have a five-minute global timeout so Playwright can write failure
+reports before the CI job ends. Browser/system dependency provisioning shares
+the job's fifteen-minute budget, without an additional install-step cutoff.

@@ -29,9 +29,17 @@ type NativeMaterializedContext = MaterializedMemberContext<
 const shared = createContextStore(open);
 declare const selected: ContextStore<NativeContext> & {
   getSnapshot(): ContextViewResult<NativeContext> & { selection: 'owned' | 'member' };
+  getServerSnapshot(): ContextViewResult<NativeContext> & { selection: 'owned' | 'member' };
+};
+
+declare const clientOnly: ContextStore<NativeContext> & {
+  getSnapshot(): ContextViewResult<NativeContext> & { liveOnly: string };
 };
 
 export function ContextViewContracts(): void {
+  const maybeServer = useContextView(clientOnly);
+  // @ts-expect-error server snapshots need not contain client-only metadata
+  maybeServer.liveOnly;
   const nativeView: Promise<ContextView<NativeContext>> = open(new AbortController().signal);
   void nativeView;
   const result = useContextView(open);

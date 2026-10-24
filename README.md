@@ -306,7 +306,7 @@ notes.create.mutate({ title: draft }, {
 The SDK starts `onSuccess(result, variables)` only while the invoking session,
 context, and subscription lifetime are current. It awaits a returned Promise
 and ignores the handler's return value. A handler failure enters mutation error
-state; its native write has already succeeded. Each current invocation owns its
+state; it cannot undo a completed native write. Each current invocation owns its
 handler, including concurrent calls. These hooks add no write retries.
 
 `mutateAsync` returns the operation's result after any supplied handler settles.
@@ -364,7 +364,9 @@ await notes.ready();
 ```
 
 React consumers use `useRecords(notes)` or `useRecordView(notes)`. Both preserve
-additional snapshot fields such as a selected store’s `selection`. They share
+additional snapshot fields such as a selected store’s `selection`. Custom stores
+should include shared metadata in both live and server snapshots; otherwise the
+result type reflects its absence during server rendering. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
 A count-only component can subscribe to the same owner with
@@ -458,8 +460,7 @@ reject obsolete bindings. Each invocation has its own Promise. `pendingCount`
 counts current work, the latest invocation owns the displayed error, and
 `reset()` clears that error without cancelling writes. Pending work includes
 an awaited success handler. `run` is the compatibility alias for `mutateAsync`.
-Issued operations can
-finish after replacement or unmount. Guard caller-side work after `await`
+Issued operations can finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
 Use the captured mutation's `isCurrent()` before UI effects after `await` to
 check that its connection binding and subscription lifetime are still active.
