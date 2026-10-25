@@ -189,8 +189,9 @@ Without materialization, rows are native typed record handles. With
 `materialize: true`, rows contain the handle and decoded value. Object
 materialization preserves the SDK's selected direct singleton children and
 infers each child's codec. Singleton eligibility derives from the native `set`
-contract. `useEnboxRecord` requires a nonempty explicit ID at runtime; malformed
-JavaScript IDs cannot turn into an unfiltered selection.
+contract. The same internal singleton path type constrains ID-free
+`useEnboxRecord` calls. Runtime validation checks `$recordLimit.max: 1` before
+observing an ID-free selection. An explicitly supplied malformed ID is rejected.
 Codecs provide TypeScript inference; a codec validator provides
 runtime payload validation.
 
@@ -242,15 +243,23 @@ unsaved edits.
 
 `useEnboxRecords` and `useEnboxRecord` compose existing query and mutation hooks.
 They own no additional cache or native record lifetime. Collections materialize
-payloads; one-record views use a bounded ID filter. Role paths and remote/role
+payloads; one-record views use a bounded native selection. Role paths and remote/role
 query options are excluded from these convenience APIs; lower-level hooks
 retain those native capabilities.
 
-Command identity includes protocol, path, parent context, explicit record ID,
-and active selection. Query filters, pagination, and read enablement do not
+Command identity includes protocol, path, parent context, selection mode,
+explicit record ID, and active selection. Query filters, pagination, and read enablement do not
 retarget commands. View updates do not retire commands; changing the selection
-parameters does. Null disables selection. There is no schema inspection,
-implicit singleton target resolution, or generic upsert behavior in these hooks.
+parameters does. Null disables selection.
+
+An ID-free selection is limited to a schema-declared singleton. It uses the
+same bounded native observation and single-record projection as an ID selection.
+`isMissing` is true only for a ready, empty view, independently of mutation
+progress. `set` delegates to native `records.set`; patch/delete resolve the
+current occupant through native `records.read` at invocation. An empty slot
+produces a 404 patch rejection and an idempotent delete; other read failures
+propagate. Command scope follows the logical slot rather than arriving rows,
+so native publications before write acknowledgment preserve progress and guards.
 
 Convenience selections require their direct parent context. Native patch is
 path-bound, so nested ID patch/delete first read immutable context metadata and
@@ -264,6 +273,10 @@ after awaiting it. There is no success-callback pipeline. Convenience query
 controls similarly mark their returned Promise handled without changing what
 an awaiting caller receives. These hooks add no retries or optimistic rows.
 Domain hook modules are ordinary static React hooks.
+
+Public-profile hooks continue to use the browser SDK's profile reader, which
+owns remote field settlement, retries, and image resources. Local singleton
+selection adds no second profile-reader implementation.
 
 Context hooks return the owner's snapshot and retry control directly, preserving
 owner metadata and captured-selection semantics. Domain hooks share logic;

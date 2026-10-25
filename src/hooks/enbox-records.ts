@@ -1,16 +1,19 @@
 'use client';
 
 import type {
-  ContextRoleGroups, DataForPath, ProtocolDefinition, ProtocolPaths, ProtocolRolePaths,
-  RecordPatchInput, RecordQuery, TypedCreateRequest, TypedMaterializedRecord, TypedProtocol, TypedRecord,
+  ContextRoleGroups, DataForPath, Enbox, ProtocolDefinition, ProtocolPaths, ProtocolRolePaths,
+  RecordPatchInput, RecordQuery, TypedCreateRequest, TypedMaterializedRecord, TypedProtocol, TypedRecord, TypedSetRequest,
 } from '@enbox/browser';
 import type { EnboxMutationResult } from './mutation.js';
 import type { RecordsOptions, RecordsResult } from './records.js';
+import type { SingletonPaths } from '../internal/singleton-paths.js';
 
+import { DwnResponseError } from '@enbox/browser';
 import { useCallback, useMemo } from 'react';
 
 import { EnboxBindingChangedError } from '../errors.js';
 import { serializeQuery } from '../internal/serialize-query.js';
+import { isSingletonPath } from '../internal/singleton-paths.js';
 import { useEnboxMutation } from './mutation.js';
 import { useRecords } from './records.js';
 
@@ -30,6 +33,7 @@ export type EnboxRecordsOptions<Definition extends ProtocolDefinition, Path exte
 export type EnboxRecordOptions<Path extends string> = RecordScope<Path> & {
   recordId: string; enabled?: boolean; from?: never; protocolRole?: never;
 };
+export type EnboxSingletonOptions<Path extends string> = Omit<EnboxRecordOptions<Path>, 'recordId'> & { recordId?: never };
 
 export type EnboxRecordItem<T> = Readonly<{
   id: string;
@@ -51,10 +55,14 @@ type SingleRecordQueryResult<State, T> = State extends unknown
     record: TypedRecord<T> | undefined;
     isReady: boolean;
     isLoading: boolean;
+    isMissing: boolean;
   }> : never;
 export type EnboxRecordResult<T> = SingleRecordQueryResult<RecordsResult<TypedMaterializedRecord<T>>, T> & Readonly<{
   patch: EnboxMutationResult<RecordPatchInput<T>, TypedRecord<T>>;
   delete: EnboxMutationResult<void, void>;
+}>;
+export type EnboxSingletonResult<T> = EnboxRecordResult<T> & Readonly<{
+  set: EnboxMutationResult<T, TypedRecord<T>>;
 }>;
 
 function copyLocalOptions<Options extends object | null | undefined>(options: Options): Options {
@@ -166,6 +174,17 @@ export function useEnboxRecords<
   }), [query, records, retry, loadMore, create, patchControl, deleteControl]);
 }
 
+/** Observe a schema-declared singleton by path; nested paths require their direct parent. */
+export function useEnboxRecord<
+  Definition extends ProtocolDefinition,
+  Codecs extends TypedProtocol['codecs'],
+  RoleGroups extends ContextRoleGroups,
+  const Path extends SingletonPaths<Definition> & DataRecordPath<Definition>,
+>(
+  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
+  path: Path,
+  ...args: RecordScopeArguments<Path, EnboxSingletonOptions<NoInfer<Path>>>
+): EnboxSingletonResult<DataForPath<Codecs, Path>>;
 /** Observe and mutate one local record by its explicit ID. Null disables selection. */
 export function useEnboxRecord<
   Definition extends ProtocolDefinition,
@@ -176,44 +195,78 @@ export function useEnboxRecord<
   protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
   path: Path,
   options: EnboxRecordOptions<Path> | null,
-): EnboxRecordResult<DataForPath<Codecs, Path>> {
+): EnboxRecordResult<DataForPath<Codecs, Path>>;
+export function useEnboxRecord<
+  Definition extends ProtocolDefinition,
+  Codecs extends TypedProtocol['codecs'],
+  RoleGroups extends ContextRoleGroups,
+  const Path extends DataRecordPath<Definition>,
+>(
+  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
+  path: Path,
+  options?: (RecordScope<Path> & { recordId?: string; enabled?: boolean }) | null,
+): EnboxRecordResult<DataForPath<Codecs, Path>> | EnboxSingletonResult<DataForPath<Codecs, Path>> {
   type Value = DataForPath<Codecs, Path>;
+  const hasRecordId = options != null && Object.hasOwn(options, 'recordId');
   const copied = copyLocalOptions(options);
   const within = copied?.within;
   const recordId = copied?.recordId;
   const active = copied !== null;
+  const singleton = useMemo(() => isSingletonPath(protocol.definition, path), [protocol, path]);
   const selection = useMemo(() => {
     if (!active) return null;
     assertScope(path, within, true);
-    if (typeof recordId !== 'string' || recordId.trim() === '') {
+    if (hasRecordId && (typeof recordId !== 'string' || recordId.trim() === '')) {
       throw new TypeError('useEnboxRecord requires a nonempty recordId.');
     }
+    if (!hasRecordId && !singleton) {
+      throw new TypeError('useEnboxRecord requires a recordId unless the path declares $recordLimit.max: 1.');
+    }
     return { protocol, path, within, recordId };
-  }, [protocol, path, within, recordId, active]);
+  }, [protocol, path, within, recordId, active, hasRecordId, singleton]);
   const query = useLocalRecordQuery(protocol, path, copied === null ? null : {
-    ...copied, filter: { recordId: copied.recordId }, pagination: { limit: 1 },
+    ...copied, filter: recordId === undefined ? {} : { recordId }, pagination: { limit: 1 },
   });
   const retry = useHandledControl(query.retry);
   const row = query.records[0];
-  const patch = useEnboxMutation(useCallback(async (enbox, value: RecordPatchInput<Value>) => {
+  const resolveTarget = useCallback(async (enbox: Enbox) => {
     if (selection === null) throw new EnboxBindingChangedError();
     const api = enbox.using(selection.protocol);
-    await assertParent(() => api.records.read(selection.path, selection.recordId), selection.within);
-    return api.records.patch(selection.path, selection.recordId, value);
-  }, [selection]), { scope: selection });
-  const remove = useEnboxMutation(useCallback(async (enbox, _variables: void) => {
-    if (selection === null) throw new EnboxBindingChangedError();
-    const api = enbox.using(selection.protocol);
-    await assertParent(() => api.records.read(selection.path, selection.recordId), selection.within);
-    await api.records.delete(selection.path, {
-      recordId: selection.recordId, ...(selection.within === undefined ? {} : { within: selection.within }),
+    const id = selection.recordId;
+    if (id !== undefined) {
+      await assertParent(() => api.records.read(selection.path, id), selection.within);
+      return { api, id };
+    }
+    // Resolve the native singleton slot even when observation is paused or stale.
+    const record = await api.records.read(selection.path, {
+      filter: {}, ...(selection.within === undefined ? {} : { within: selection.within }),
     });
+    return { api, id: record?.id };
+  }, [selection]);
+  const patch = useEnboxMutation(useCallback(async (enbox, value: RecordPatchInput<Value>) => {
+    const { api, id } = await resolveTarget(enbox);
+    if (id === undefined) throw new DwnResponseError('useEnboxRecord.patch', { code: 404, detail: 'Not Found' });
+    return api.records.patch(path, id, value);
+  }, [resolveTarget, path]), { scope: selection });
+  const remove = useEnboxMutation(useCallback(async (enbox, _variables: void) => {
+    const { api, id } = await resolveTarget(enbox);
+    if (id !== undefined) {
+      await api.records.delete(path, { recordId: id, ...(within === undefined ? {} : { within }) });
+    }
+  }, [resolveTarget, path, within]), { scope: selection });
+  const set = useEnboxMutation(useCallback(async (enbox, data: Value) => {
+    if (selection === null) throw new EnboxBindingChangedError();
+    return enbox.using(selection.protocol).records.set(selection.path as SingletonPaths<Definition>, {
+      data, ...(selection.within === undefined ? {} : { within: selection.within }),
+    } as TypedSetRequest<Codecs, SingletonPaths<Definition>>);
   }, [selection]), { scope: selection });
   return useMemo(() => {
     const { records: _rows, loadMore: _load, hasMore: _more, isLoadingMore: _loading, ...state } = query;
     return Object.freeze({
       ...state, retry, data: row?.value, record: row?.record,
-      isReady: query.status === 'ready', isLoading: query.status === 'loading', patch, delete: remove,
+      isReady: query.status === 'ready', isLoading: query.status === 'loading',
+      isMissing: query.status === 'ready' && row === undefined,
+      patch, delete: remove, ...(singleton && !hasRecordId ? { set } : {}),
     });
-  }, [query, row, retry, patch, remove]);
+  }, [query, row, retry, patch, remove, set, singleton, hasRecordId]);
 }

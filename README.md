@@ -55,7 +55,7 @@ version changes are documented in
 | Need | API |
 | --- | --- |
 | A local list with typed create, patch, and delete | `useEnboxRecords(protocol, path, options)` |
-| One record by its explicit ID | `useEnboxRecord(protocol, path, options)` |
+| One record by ID, or a schema-declared singleton by path | `useEnboxRecord(protocol, path, options)` |
 | Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
 | A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
 | One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
@@ -284,12 +284,34 @@ conflict recovery may call it again, so keep UI effects outside the producer.
 
 `useEnboxRecord(Protocol, path, { recordId, within })` reads one record and
 provides its `data`, native `record`, `patch`, and `delete` commands. Root paths
-omit `within`. An ID is always required, including for a protocol singleton;
-there is no schema-dependent selection mode. Its commands stay bound to that
-ID regardless of the displayed data.
+omit `within`. Its commands stay bound to that ID regardless of the displayed data.
 
-Use native operations through `useEnboxMutation` for additional behavior, such
-as replacing or creating a schema-declared singleton with `records.set`.
+For paths declaring `$recordLimit.max: 1`, omit the ID:
+
+```tsx
+const settings = useEnboxRecord(SettingsProtocol, 'settings');
+// Nested singleton: useEnboxRecord(Protocol, 'project/settings', { within: projectContextId })
+
+if (settings.isLoading) return <p>Loading settings…</p>;
+if (settings.error) return <p role="alert">{settings.error.message}</p>;
+if (settings.isMissing) return <p>No settings saved yet.</p>;
+```
+
+Both forms expose one `record` and decoded `data` directly, with no array to
+index. `isMissing` means the local view is ready and empty; it is false while
+the read is idle, loading, or failed. A live empty selection is represented as missing
+rather than an HTTP error. Native one-shot reads translate 404 to `undefined`.
+
+Path-selected singletons also provide `set.mutate(data)`, delegating to native
+`records.set` to create or replace the occupant. Patch/delete resolve the current
+occupant through native `records.read` when invoked, independently of observation
+readiness. A missing occupant makes patch reject with native-shaped 404 and delete
+succeed without a write. Lookup failures propagate. Native authorization and
+concurrency rules still apply. Ordinary collection paths require an explicit ID.
+
+For public profiles from another DID, use `useProfile`; it owns remote profile
+settlement and image resources. These local CRUD hooks operate on the connected
+session's application records.
 
 Nested hooks require their direct parent's exact context ID; root selections
 reject `within`. Pass `null` while no parent is selected. `enabled: false`
