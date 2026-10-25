@@ -18,7 +18,7 @@ function sandbox(t) {
 
 function run(args, cwd, { executable = cli, imports = [], env = {} } = {}) {
   const result = spawnSync(process.execPath, [...imports.flatMap((path) => ['--import', pathToFileURL(path).href]), executable, ...args], {
-    cwd, encoding: 'utf8', timeout: 5_000, env: { ...process.env, ...env },
+    cwd, encoding: 'utf8', timeout: 5_000, env: { ...process.env, npm_config_user_agent: '', ...env },
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null);
@@ -112,8 +112,8 @@ test('generates the bundled template with display and npm names kept in JSON', (
   const result = run([destination], directory);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(json(join(destination, 'package.json')).name, 'my-fantastic-app');
-  assert.equal(json(join(destination, 'package-lock.json')).name, 'my-fantastic-app');
-  assert.equal(json(join(destination, 'package-lock.json')).packages[''].name, 'my-fantastic-app');
+  assert.equal(fs.existsSync(join(destination, 'package-lock.json')), false);
+  assert.equal(fs.existsSync(join(destination, 'bun.lock')), false);
   assert.equal(json(join(destination, 'src/app.json')).id, 'my-fantastic-app');
   assert.equal(json(join(destination, 'src/app.json')).name, basename(destination));
   for (const path of ['index.html', 'tsconfig.json', 'vite.config.ts', 'src/main.tsx', 'src/App.tsx', '.gitignore']) {
@@ -123,9 +123,37 @@ test('generates the bundled template with display and npm names kept in JSON', (
   assert.equal(fs.readFileSync(join(destination, '.gitignore'), 'utf8'), fs.readFileSync(join(template, '_gitignore'), 'utf8'));
   assert.equal(fs.readFileSync(join(destination, 'src/main.tsx'), 'utf8'), fs.readFileSync(join(template, 'src/main.tsx'), 'utf8'));
   assert.equal(fs.readFileSync(join(template, 'package.json'), 'utf8'), originalPackage);
-  assert.match(result.stdout, /npm ci\n  npm run dev/);
+  assert.match(result.stdout, /npm install\n  npm run dev/);
   assert.equal(fs.existsSync(join(destination, 'node_modules')), false);
   assert.equal(fs.existsSync(join(destination, '.git')), false);
+});
+
+for (const manager of ['npm', 'bun']) {
+  test(`detects ${manager}, prints its commands, and leaves lockfile creation to the first install`, (t) => {
+    const directory = sandbox(t);
+    const destination = join(directory, 'app');
+    const result = run([destination], directory, { env: { npm_config_user_agent: `${manager}/1.4.4 other/1.0.0` } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(`${manager} install\n  ${manager} run dev`));
+    assert.equal(fs.existsSync(join(destination, 'package-lock.json')), false);
+    assert.equal(fs.existsSync(join(destination, 'bun.lock')), false);
+    assert.equal(fs.existsSync(join(destination, 'node_modules')), false);
+  });
+  test(`allows an explicit ${manager} override`, (t) => {
+    const directory = sandbox(t);
+    const result = run(['app', '--package-manager', manager], directory, {
+      env: { npm_config_user_agent: manager === 'bun' ? 'npm/11.0.0' : 'bun/1.4.4' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(`${manager} install\n  ${manager} run dev`));
+  });
+}
+
+test('rejects unsupported package managers before writing', (t) => {
+  const directory = sandbox(t);
+  const result = run(['app', '--package-manager', 'yarn'], directory);
+  assert.equal(result.status, 1);
+  assert.deepEqual(fs.readdirSync(directory), []);
 });
 
 test('supports an empty current directory and nested new destinations', (t) => {
@@ -187,11 +215,15 @@ test('excludes local dependency and build artifacts even when they exist in a so
     fs.mkdirSync(join(fixture, 'template', artifact), { recursive: true });
     fs.writeFileSync(join(fixture, 'template', artifact, 'local-only'), 'not starter source');
   }
+  for (const lock of ['package-lock.json', 'bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'npm-shrinkwrap.json']) {
+    fs.writeFileSync(join(fixture, 'template', lock), 'local-only');
+  }
   fs.writeFileSync(join(fixture, 'template', 'tsconfig.tsbuildinfo'), 'local-only');
   const destination = join(directory, 'app');
   const result = run([destination], directory, { executable: join(fixture, 'bin/create-dapp.mjs') });
   assert.equal(result.status, 0, result.stderr);
-  for (const artifact of ['node_modules', 'dist', 'build', '.git', 'coverage', '.artifacts', 'tsconfig.tsbuildinfo']) {
+  for (const artifact of ['node_modules', 'dist', 'build', '.git', 'coverage', '.artifacts', 'tsconfig.tsbuildinfo',
+    'package-lock.json', 'bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'npm-shrinkwrap.json']) {
     assert.equal(fs.existsSync(join(destination, artifact)), false, artifact);
   }
 });

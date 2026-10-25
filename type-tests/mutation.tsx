@@ -13,6 +13,11 @@ function MutationContracts() {
   mutation.pendingVariables[0] = { recipient: 'bob' };
   // @ts-expect-error Variables retain the operation's input type.
   mutation.run({ recipient: 123 });
+  mutation.mutate({ recipient: 'alice' });
+  // @ts-expect-error UI callbacks are not part of the native mutation API
+  mutation.mutate({ recipient: 'alice' }, { onSuccess: () => {} });
+  // @ts-expect-error awaited native operations do not take UI callbacks
+  mutation.mutateAsync({ recipient: 'alice' }, { onSuccess: () => {} });
   const noVariables = useEnboxMutation(async () => 42);
   const emptyInput: readonly void[] = noVariables.pendingVariables;
   const noInputIssued: Promise<number> = noVariables.run(undefined);

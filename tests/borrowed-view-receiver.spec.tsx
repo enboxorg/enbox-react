@@ -70,6 +70,19 @@ describe('borrowed view method receivers', () => {
     expect(store.closes).toBe(0);
   });
 
+  it('uses the retry supplied by a borrowed context snapshot instead of redirecting it to its owner', async () => {
+    const store = new Contexts();
+    const retrySelection = vi.fn(async () => {});
+    const snapshot = Object.freeze({ ...store.getSnapshot(), retry: retrySelection, selection: 'current' });
+    vi.spyOn(store, 'getSnapshot').mockReturnValue(snapshot);
+    const hook = renderHook(() => useContextView(store));
+    await hook.result.current.retry();
+    expect(retrySelection).toHaveBeenCalledOnce();
+    expect(store.retries).toBe(0);
+    hook.unmount();
+    expect(store.closes).toBe(0);
+  });
+
   it('preserves ordinary context store methods in SSR, subscriptions, and controls', async () => {
     const store = new Contexts();
     store.serverState = Object.freeze({ ...store.getSnapshot(), contexts: ['server'] });

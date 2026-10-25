@@ -2,7 +2,7 @@ import { useEnboxConnection } from '@enbox/react';
 import { useEffect } from 'react';
 
 import app from './app.json' with { type: 'json' };
-import { Demo } from './demo/Demo.js';
+import { TaskBoard } from './demo/TaskBoard.js';
 import { ProfileCard } from './ProfileCard.js';
 
 export function App() {
@@ -53,7 +53,7 @@ export function App() {
         {connection.isConnected && connection.did ? (
           <div className="connected-content">
             <ProfileCard enbox={connection.enbox} did={connection.did} identityName={connection.identityName} />
-            <Demo disabled={busy || connection.walletRepair !== undefined} />
+            <TaskBoard disabled={busy || connection.walletRepair !== undefined} />
           </div>
         ) : (
           <section className="panel connect-panel" aria-labelledby="connect-title">

@@ -1,6 +1,6 @@
 import type { ConnectionSnapshot } from '@enbox/browser';
 
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EnboxBindingChangedError, EnboxNotConnectedError, EnboxProvider, useEnboxMutation } from '../src/index.js';
@@ -8,6 +8,20 @@ import { EnboxMutationObserver } from '../src/internal/mutation-observer.js';
 import { connected, controlledClient, deferred, facade, subscribeObserver } from './helpers.js';
 
 describe('session-bound mutations', () => {
+  it('handles an event mutation failure in state without retrying the native operation', async () => {
+    const { client } = controlledClient(connected());
+    const error = new Error('Write failed');
+    const operation = vi.fn(async () => { throw error; });
+    const hook = renderHook(() => useEnboxMutation(operation), {
+      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+    });
+    act(() => hook.result.current.mutate());
+    await waitFor(() => expect(hook.result.current.error).toBe(error));
+    expect(operation).toHaveBeenCalledOnce();
+    expect(hook.result.current.isPending).toBe(false);
+    expect(hook.result.current.run).toBe(hook.result.current.mutateAsync);
+  });
+
   it('publishes immutable typed variables for concurrent calls and removes only settled calls', async () => {
     const initial = connected();
     const { client } = controlledClient(initial);

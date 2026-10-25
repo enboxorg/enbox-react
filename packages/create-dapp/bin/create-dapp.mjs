@@ -11,17 +11,20 @@ const manifest = JSON.parse(fs.readFileSync(join(packageRoot, 'package.json'), '
 const excluded = new Set([
   'node_modules', 'dist', 'build', '.git', '.artifacts', '.vite', '.cache',
   'coverage', 'test-results', 'playwright-report', '.DS_Store',
+  'package-lock.json', 'bun.lock', 'bun.lockb', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
 ]);
 
 const usage = `Create a minimal Enbox React application.
 
 Usage:
   npm create @enbox/dapp@latest [directory]
+  bun create @enbox/dapp@latest [directory]
   npx @enbox/create-dapp@latest [directory]
 
 Options:
   -h, --help     Show this help
   -v, --version  Show the generator version
+  --package-manager <npm|bun>  Override the invoking package manager
 
 The destination must be empty. No dependencies are installed and no Git
 repository is created. Use "." to create an app in the current empty directory.
@@ -78,11 +81,6 @@ function createProject(destination) {
     value.id = name;
     value.name = displayName;
   });
-  customizeJson(files, 'package-lock.json', (value) => {
-    if (value.packages?.[''] === undefined) throw new Error('root package metadata is missing');
-    value.name = name;
-    value.packages[''].name = name;
-  });
 
   const createdFiles = [];
   const createdDirectories = [];
@@ -128,11 +126,16 @@ function quoteDirectory(directory) {
 
 async function main() {
   const { values, positionals } = parseArgs({
-    options: { help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' } },
+    options: {
+      help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
+      'package-manager': { type: 'string' },
+    },
     allowPositionals: true,
   });
   if (values.help) { console.log(usage); return; }
   if (values.version) { console.log(manifest.version); return; }
+  const manager = values['package-manager'] ?? (process.env.npm_config_user_agent?.startsWith('bun/') ? 'bun' : 'npm');
+  if (manager !== 'npm' && manager !== 'bun') throw new Error('The package manager must be npm or bun.');
   if (positionals.length > 1) throw new Error('Provide one target directory. Run with --help for usage.');
   let directory = positionals[0];
   if (directory === undefined) {
@@ -149,7 +152,7 @@ async function main() {
   const destination = resolve(directory);
   createProject(destination);
   const changeDirectory = process.platform === 'win32' ? 'Set-Location -LiteralPath' : 'cd';
-  console.log(`Created ${basename(destination)}.\n\n${process.platform === 'win32' ? 'In PowerShell' : 'Next'}:\n  ${changeDirectory} ${quoteDirectory(destination)}\n  npm ci\n  npm run dev`);
+  console.log(`Created ${basename(destination)}.\n\n${process.platform === 'win32' ? 'In PowerShell' : 'Next'}:\n  ${changeDirectory} ${quoteDirectory(destination)}\n  ${manager} install\n  ${manager} run dev`);
 }
 
 main().catch((cause) => {

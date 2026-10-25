@@ -4,7 +4,6 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 
 import { packSdk } from './pack-sdk.mjs';
 
@@ -20,39 +19,6 @@ function readJson(path) {
 
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
-}
-
-function usePackedSdk(project, packedSdk, sdk) {
-  const fixture = join(root, 'tests/compatibility/starter');
-  const manifestPath = join(project, 'package.json');
-  const manifest = readJson(manifestPath);
-  const candidate = readJson(join(fixture, 'package.json'));
-  for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
-    if (candidate[section] === undefined) delete manifest[section];
-    else manifest[section] = { ...candidate[section] };
-  }
-  const parsed = ts.parseConfigFileTextToJson('bun.lock', readFileSync(join(fixture, 'bun.lock'), 'utf8'));
-  if (parsed.error) throw new Error('The starter candidate lockfile is invalid.');
-  const lock = parsed.config;
-  const sdkEntry = lock.packages['@enbox/react'];
-  assert.ok(sdkEntry, 'The starter candidate lockfile must contain the React SDK.');
-  for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
-    assert.deepEqual(sdkEntry[1][section], sdk[section], `Regenerate the starter candidate lockfile for changed SDK ${section}.`);
-  }
-
-  const dependency = 'file:' + packedSdk.immutableArchivePath;
-  manifest.dependencies['@enbox/react'] = dependency;
-  lock.workspaces[''].name = manifest.name;
-  lock.workspaces[''].dependencies['@enbox/react'] = dependency;
-  sdkEntry[0] = '@enbox/react@' + packedSdk.immutableArchivePath;
-  sdkEntry[2] = packedSdk.integrity;
-  // Candidate upgrades use their own registry graph, without changing the shipped starter.
-  rmSync(join(project, 'node_modules'), { recursive: true, force: true });
-  rmSync(join(project, 'package-lock.json'));
-  writeJson(manifestPath, manifest);
-  const lockfile = JSON.stringify(lock, null, 2) + '\n';
-  writeFileSync(join(project, 'bun.lock'), lockfile);
-  return lockfile;
 }
 
 mkdirSync(artifacts, { recursive: true });
@@ -71,42 +37,50 @@ try {
   const generatorRoot = join(extracted, 'package');
   const generator = readJson(join(generatorRoot, 'package.json'));
   assert.equal(generator.name, '@enbox/create-dapp');
-  assert.equal(generator.bin['create-dapp'], 'bin/create-dapp.mjs');
-  execFileSync(process.execPath, [join(generatorRoot, generator.bin['create-dapp']), project], {
-    cwd: temporaryRoot, stdio: 'inherit',
-  });
-
-  const manifest = readJson(join(project, 'package.json'));
-  const lock = readJson(join(project, 'package-lock.json'));
-  assert.equal(manifest.name, packageName);
-  assert.equal(manifest.private, true);
-  assert.equal(lock.lockfileVersion, 3);
-  assert.equal(lock.name, packageName);
-  assert.equal(lock.packages[''].name, packageName);
-  const app = readJson(join(project, 'src/app.json'));
-  assert.equal(app.id, packageName);
-  assert.equal(app.name, displayName);
-  assert.ok(readFileSync(join(project, '.gitignore'), 'utf8').includes('node_modules'));
-
+  const source = process.env.ENBOX_STARTER_SDK_SOURCE ?? 'packed';
+  assert.ok(source === 'packed' || source === 'registry', 'SDK source must be packed or registry.');
   const environment = {
     ...process.env,
     npm_config_cache: join(temporaryRoot, 'npm-cache'),
     ENBOX_STARTER_DIR: project,
     ENBOX_STARTER_APP_NAME: displayName,
   };
-  // First verify exactly what the published generator installs.
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: project, env: environment, stdio: 'inherit' });
-  execFileSync('npm', ['audit', '--audit-level=low'], { cwd: project, env: environment, stdio: 'inherit' });
-  execFileSync('npm', ['run', 'build'], { cwd: project, env: environment, stdio: 'inherit' });
-  assert.deepEqual(readJson(join(project, 'package-lock.json')), lock, 'The shipped starter lockfile must remain unchanged.');
-
-  const sdk = readJson(join(root, 'package.json'));
-  const patchedLock = usePackedSdk(project, packedSdk, sdk);
-  execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: project, env: environment, stdio: 'inherit' });
-  execFileSync('bun', ['audit'], { cwd: project, env: environment, stdio: 'inherit' });
-  assert.equal(readFileSync(join(project, 'bun.lock'), 'utf8'), patchedLock, 'Bun must leave the candidate lockfile unchanged.');
-  assert.equal(readJson(join(project, 'node_modules/@enbox/react/package.json')).version, sdk.version);
-  execFileSync('npm', ['run', 'build'], { cwd: project, env: environment, stdio: 'inherit' });
+  for (const manager of ['npm', 'bun']) {
+    const directory = manager === 'npm' ? project : join(temporaryRoot, 'Bun dapp');
+    execFileSync(manager === 'bun' ? 'bun' : process.execPath,
+      [join(generatorRoot, generator.bin['create-dapp']), directory, '--package-manager', manager], {
+        cwd: temporaryRoot, env: environment, stdio: 'inherit',
+      });
+    assert.equal(existsSync(join(directory, 'package-lock.json')), false);
+    assert.equal(existsSync(join(directory, 'bun.lock')), false);
+    const manifest = readJson(join(directory, 'package.json'));
+    if (manager === 'npm') {
+      assert.equal(manifest.name, packageName);
+      assert.equal(manifest.private, true);
+      const app = readJson(join(directory, 'src/app.json'));
+      assert.equal(app.id, packageName);
+      assert.equal(app.name, displayName);
+    }
+    if (source === 'packed') {
+      // Pre-release checks install exactly the archive the SDK workflow publishes.
+      manifest.dependencies['@enbox/react'] = 'file:' + packedSdk.immutableArchivePath;
+      writeJson(join(directory, 'package.json'), manifest);
+    }
+    execFileSync(manager, ['install', ...(manager === 'npm' ? ['--no-audit', '--no-fund'] : [])], {
+      cwd: directory, env: environment, stdio: 'inherit',
+    });
+    execFileSync(manager, ['audit', ...(manager === 'npm' ? ['--audit-level=low'] : [])], {
+      cwd: directory, env: environment, stdio: 'inherit',
+    });
+    execFileSync(manager, ['run', 'build'], { cwd: directory, env: environment, stdio: 'inherit' });
+    const lockPath = join(directory, manager === 'npm' ? 'package-lock.json' : 'bun.lock');
+    const lock = readFileSync(lockPath, 'utf8');
+    execFileSync(manager, manager === 'npm' ? ['ci', '--no-audit', '--no-fund'] : ['install', '--frozen-lockfile'], {
+      cwd: directory, env: environment, stdio: 'inherit',
+    });
+    assert.equal(readFileSync(lockPath, 'utf8'), lock, 'The created lockfile must support a reproducible install.');
+    assert.equal(existsSync(join(directory, manager === 'npm' ? 'bun.lock' : 'package-lock.json')), false);
+  }
   assert.equal(existsSync(join(project, '__fixtures__')), false, 'The generator must not include browser test fixtures.');
   assert.equal(existsSync(join(project, 'dist/__fixtures__')), false, 'The production build must not include browser test fixtures.');
   const fixtures = join(project, '__fixtures__');

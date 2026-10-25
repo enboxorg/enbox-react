@@ -1,5 +1,6 @@
 import type { ObservableStore } from '@enbox/browser';
 
+import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { reportCleanupError, toError } from './errors.js';
 
@@ -184,10 +185,11 @@ export class OwnedViewObserver<
     this._active = false;
     const unsubscribeBinding = this._unsubscribeBinding;
     this._unsubscribeBinding = undefined;
-    if (unsubscribeBinding !== undefined) this.runCleanup(unsubscribeBinding);
-    this.closeAttempt();
+    // Reset before any native cleanup can synchronously start a replacement.
     this._state = this._openView === null ? this._presentation.idle : this._presentation.loading;
     this._snapshot = this._openView === null ? this._idleSnapshot : this._loadingSnapshot;
+    this.closeAttempt();
+    if (unsubscribeBinding !== undefined) this.runCleanup(unsubscribeBinding);
     this.notify();
   }
 
@@ -211,7 +213,7 @@ export class OwnedViewObserver<
     try {
       if (!this.isCurrent(attempt) || this._openView === null) return;
       const view = await this._openView(attempt.abortController.signal);
-      if (!this.isCurrent(attempt)) { this.trackViewClose(view); return; }
+      if (!this.isCurrent(attempt)) { this.trackCleanup(() => view.close()); return; }
       attempt.view = view;
       const unsubscribe = view.subscribe(() => {
         if (!this.isCurrent(attempt)) return;
@@ -251,26 +253,30 @@ export class OwnedViewObserver<
   private releaseAttempt(attempt: ViewAttempt<State> | undefined): void {
     if (attempt === undefined) return;
     const unsubscribe = attempt.unsubscribe;
-    attempt.unsubscribe = undefined;
-    if (unsubscribe !== undefined) this.runCleanup(unsubscribe);
-    attempt.abortController.abort();
     const view = attempt.view;
+    attempt.unsubscribe = undefined;
     attempt.view = undefined;
-    if (view !== undefined) this.trackViewClose(view);
+    // Unsubscribe and abort handlers can also reenter owner.close(). Register
+    // the entire retiring attempt before any of those callbacks run.
+    this.trackCleanup(() => {
+      if (unsubscribe !== undefined) this.runCleanup(unsubscribe);
+      attempt.abortController.abort();
+      return view?.close();
+    });
   }
 
   private runCleanup(unsubscribe: () => void): void {
     try { unsubscribe(); } catch (cause: unknown) { reportCleanupError(cause); }
   }
 
-  private trackViewClose(view: CloseableView<State>): void {
+  private trackCleanup(cleanup: () => void | Promise<void>): void {
     let finish!: () => void;
     const closing = new Promise<void>((resolve) => { finish = resolve; });
-    // Native close can synchronously close this owner; register cleanup first.
+    // Native teardown can synchronously close this owner; register it first.
     this._closing.add(closing);
     const complete = (): void => { this._closing.delete(closing); finish(); };
     try {
-      void Promise.resolve(view.close()).catch(reportCleanupError).then(complete);
+      void Promise.resolve(cleanup()).catch(reportCleanupError).then(complete);
     } catch (cause: unknown) {
       reportCleanupError(cause);
       complete();
@@ -282,6 +288,6 @@ export class OwnedViewObserver<
   }
 
   private notify(): void {
-    for (const listener of this._listeners) listener();
+    notifyListeners(this._listeners);
   }
 }

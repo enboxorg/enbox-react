@@ -27,7 +27,7 @@ test('the built package imports without browser globals and leaves client startu
   for (const name of [
     'EnboxProvider', 'useEnboxClient', 'useConnection', 'useConnectionActions',
     'useEnbox', 'useIdentity', 'useSyncStatus', 'useProtocol',
-    'useRecords', 'useRecordView', 'useObservableStore', 'useEnboxMutation',
+    'useEnboxRecords', 'useEnboxRecord', 'useRecords', 'useRecordView', 'useObservableStore', 'useEnboxMutation',
     'useEnboxConnection', 'useProfile', 'useProfiles', 'useContextView',
   ]) {
     assert.equal(typeof react[name], 'function', name);

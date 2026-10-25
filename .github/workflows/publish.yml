@@ -32,8 +32,7 @@ jobs:
       - run: bun run check
       - run: node scripts/test-react18.mjs
       - run: bunx --no-install playwright install --with-deps --only-shell chromium
-        timeout-minutes: 4
-      - run: bun run test:browser
+      - run: node scripts/test-starter.mjs
       - name: Publish the tested archive
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

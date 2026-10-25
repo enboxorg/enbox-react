@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createRecordStore } from '../src/config/index.js';
-import { useRecordView } from '../src/index.js';
+import { useRecords, useRecordView } from '../src/index.js';
 import { EnboxBindingChangedError } from '../src/errors.js';
 import { ControlledView, deferred } from './helpers.js';
 
@@ -86,6 +86,31 @@ describe('selected record owners', () => {
     pending.resolve(new ControlledView(['saved']));
     await selecting;
     await store.close();
+  });
+
+  it('does not redirect a retained React pagination control to a replacement selection', async () => {
+    const views: ControlledView<string>[] = [];
+    const store = createRecordStore({ selection: 'first', open: async (key: string) => {
+      const view = new ControlledView([key]);
+      views.push(view);
+      return view;
+    } });
+    const hook = renderHook(() => useRecords(store));
+    try {
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      const captured = hook.result.current.loadMore;
+      await act(async () => { await store.select('next'); });
+      expect(hook.result.current.selection).toBe('next');
+      await expect(captured()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+      expect(views[1]!.loadMore).not.toHaveBeenCalled();
+      await act(async () => { await hook.result.current.loadMore(); });
+      expect(views[1]!.loadMore).toHaveBeenCalledOnce();
+      await act(async () => { await store.select('first'); });
+      await expect(captured()).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    } finally {
+      hook.unmount();
+      await store.close();
+    }
   });
 
   it('publishes an atomic replacement and rejects ready waiters for the retired selection', async () => {
