@@ -21,10 +21,72 @@ const protocol = defineProtocol({
   types: {
     project: { dataFormats: ['application/json'], encryptionRequired: true },
     note: { dataFormats: ['application/json'], encryptionRequired: true },
+    settings: { dataFormats: ['application/json'], encryptionRequired: true },
   },
-  structure: { note: {}, project: { note: {} } },
+  structure: { note: {}, settings: { $recordLimit: { max: 1 } }, project: { note: {}, settings: { $recordLimit: { max: 1 } } } },
 } as const, {
   project: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<{ title: string; done: boolean }>(),
+  settings: recordCodecs.json<{ title: string; done: boolean }>(),
+});
+
+describe('singleton commands with a real encrypted DWN', () => {
+  it.each([
+    { path: 'settings', enabled: true }, { path: 'settings', enabled: false },
+    { path: 'project/settings', enabled: true }, { path: 'project/settings', enabled: false },
+  ] as const)('observes and mutates $path with observation enabled=$enabled', async ({ path, enabled }) => {
+    const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [protocol] }) });
+    try {
+      const records = context.enbox.using(protocol).records;
+      const within = path === 'settings' ? undefined : (await records.create('project', { data: { name: 'Parent' } })).contextId;
+      const other = path === 'settings' ? undefined : await records.set('project/settings', {
+        within: (await records.create('project', { data: { name: 'Other' } })).contextId,
+        data: { title: 'Other parent', done: false },
+      });
+      const { client } = controlledClient({ phase: 'connected', enbox: context.enbox, session: context.session });
+      const hook = renderHook(() => useEnboxRecord(protocol, path, {
+        enabled, ...(within === undefined ? {} : { within }),
+      } as never), { wrapper: ({ children }) => <EnboxProvider client={client} initializeOnMount={false}>{children}</EnboxProvider> });
+      try {
+        if (enabled) await waitFor(() => expect(hook.result.current.isMissing).toBe(true));
+        else expect(hook.result.current.isMissing).toBe(false);
+        let id!: string;
+        await act(async () => {
+          const created = await hook.result.current.set.mutateAsync({ title: 'First', done: false });
+          id = created.id;
+          expect(created.encryption).toBeDefined();
+          const replaced = await hook.result.current.set.mutateAsync({ title: 'Replaced', done: false });
+          expect(replaced.id).toBe(id);
+          expect(replaced.encryption).toBeDefined();
+        });
+        if (enabled) {
+          await waitFor(() => expect(hook.result.current.data?.title).toBe('Replaced'));
+          expect(hook.result.current.record?.id).toBe(id);
+          expect(hook.result.current.isMissing).toBe(false);
+        }
+        await act(async () => {
+          const updated = await hook.result.current.patch.mutateAsync((current) => ({ title: `${current.title} patched`, done: true }));
+          expect(updated.id).toBe(id);
+          expect(updated.encryption).toBeDefined();
+          expect(await updated.value()).toEqual({ title: 'Replaced patched', done: true });
+          await hook.result.current.delete.mutateAsync();
+        });
+        expect(await records.read(path, { filter: {}, ...(within === undefined ? {} : { within }) })).toBeUndefined();
+        if (enabled) await waitFor(() => expect(hook.result.current.isMissing).toBe(true));
+        else expect(hook.result.current.status).toBe('idle');
+        await act(async () => {
+          await expect(hook.result.current.patch.mutateAsync({ title: 'Missing' })).rejects.toMatchObject({ status: { code: 404 } });
+          await hook.result.current.delete.mutateAsync();
+          const recreated = await hook.result.current.set.mutateAsync({ title: 'New occupant', done: false });
+          expect(recreated.id).not.toBe(id);
+          const updated = await hook.result.current.patch.mutateAsync({ done: true });
+          expect(updated.id).toBe(recreated.id);
+        });
+        if (other !== undefined) {
+          expect(await (await records.read('project/settings', other.id))!.value()).toEqual({ title: 'Other parent', done: false });
+        }
+      } finally { await act(async () => { hook.unmount(); }); }
+    } finally { await context.close(); }
+  });
 });
 
 describe('explicit record commands with a real encrypted DWN', () => {

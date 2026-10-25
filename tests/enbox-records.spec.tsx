@@ -21,9 +21,13 @@ function setup<T = Note>() {
     observe: vi.fn(async (_path: string, _options: unknown) => view),
     query: vi.fn(async (_path: string, _options: unknown): Promise<{ records: { id: string; contextId: string }[] }> => ({ records: [] })),
     create: vi.fn(async (_path: string, _request: unknown) => ({ id: 'created', contextId: 'first/created' })),
-    read: vi.fn(async (_path: string, id: string) => ({ id, contextId: `first/${id}` })),
+    read: vi.fn(async (_path: string, request: string | { filter: object; within?: string }): Promise<{ id: string; contextId: string } | undefined> => {
+      const id = typeof request === 'string' ? request : 'singleton';
+      return { id, contextId: `first/${id}` };
+    }),
     patch: vi.fn(async (_path: string, id: string, _patch: unknown) => ({ id })),
     delete: vi.fn(async (_path: string, _request: unknown) => {}),
+    set: vi.fn(async (_path: string, _request: unknown) => ({ id: 'singleton', contextId: 'first/singleton' })),
   };
   const control = controlledClient(connected(facade(vi.fn(() => ({ records: api })))));
   const wrapper = ({ children }: { children: React.ReactNode }) => <EnboxProvider client={control.client}>{children}</EnboxProvider>;
@@ -132,11 +136,15 @@ describe('local record commands', () => {
     expect(api.delete).not.toHaveBeenCalled();
   });
 
-  it.each(['success', 'failure'] as const)('keeps explicit-ID deletion state after an early view update (%s)', async (outcome) => {
-    const { api, view, wrapper } = setup();
-    const record = { id: 'note', contextId: 'first/note' };
+  it.each([
+    { mode: 'id', outcome: 'success' }, { mode: 'id', outcome: 'failure' },
+    { mode: 'singleton', outcome: 'success' }, { mode: 'singleton', outcome: 'failure' },
+  ] as const)('keeps $mode deletion state after an early view update ($outcome)', async ({ mode, outcome }) => {
+    const { api, view, wrapper } = setup<Note | { emoji: string }>();
+    const id = mode === 'id' ? 'note' : 'singleton';
+    const record = { id, contextId: `first/${id}` };
     view.publish({ status: 'ready', current: true, hasMore: false, records: [
-      { record, value: { text: 'Saved', done: false } },
+      { record, value: mode === 'id' ? { text: 'Saved', done: false } : { emoji: '🌱' } },
     ] });
     const acknowledgment = deferred<void>();
     const failure = new Error('Delete acknowledgment failed');
@@ -144,8 +152,10 @@ describe('local record commands', () => {
       view.publish({ status: 'ready', current: true, hasMore: false, records: [] });
       await acknowledgment.promise;
     });
-    const hook = renderHook(() => useEnboxRecord(protocol, 'space/note', { within: 'first', recordId: 'note' }), { wrapper });
-    await waitFor(() => expect(hook.result.current.record?.id).toBe('note'));
+    const hook = renderHook(() => useEnboxRecord(protocol, mode === 'id' ? 'space/note' : 'space/choice', {
+      within: 'first', ...(mode === 'id' ? { recordId: 'note' } : {}),
+    } as never), { wrapper });
+    await waitFor(() => expect(hook.result.current.record?.id).toBe(id));
     const deletion = hook.result.current.delete;
     const completed = vi.fn();
     let issued!: Promise<void>;
@@ -201,7 +211,7 @@ describe('local record commands', () => {
     expect(api.delete).not.toHaveBeenCalled();
   });
 
-  it('requires an ID even on a native singleton path', () => {
+  it('rejects an explicitly undefined ID even on a native singleton path', () => {
     const { api, wrapper } = setup();
     expect(() => renderHook(() => useEnboxRecord(protocol, 'space/choice', {
       within: 'first', recordId: undefined,
@@ -228,5 +238,104 @@ describe('local record commands', () => {
     await act(async () => { await expect(hook.result.current.patch.mutateAsync({ done: true })).rejects.toBe(error); });
     expect(hook.result.current.patch.error).toBe(error);
     expect(() => renderHook(() => useEnboxRecords(protocol, 'space', { from: 'did:example:remote' } as never), { wrapper })).toThrow('local session');
+  });
+});
+
+describe('singleton selections', () => {
+  it.each([
+    { path: 'choice', options: undefined },
+    { path: 'space/choice', options: { within: 'first' } },
+  ] as const)('exposes one $path record directly and distinguishes missing from errors', async ({ path, options }) => {
+    const { api, view, wrapper } = setup<{ emoji: string }>();
+    const hook = renderHook(() => useEnboxRecord(protocol, path, options as never), { wrapper });
+    expect(hook.result.current.isMissing).toBe(false);
+    await waitFor(() => expect(hook.result.current.isMissing).toBe(true));
+    expect(hook.result.current.data).toBeUndefined();
+    expect(hook.result.current.record).toBeUndefined();
+    expect(hook.result.current).not.toHaveProperty('records');
+    expect(hook.result.current).not.toHaveProperty('loadMore');
+    expect(api.observe).toHaveBeenCalledWith(path, expect.objectContaining({
+      filter: {}, pagination: { limit: 1 }, materialize: true, ...options,
+    }));
+    const record = { id: 'saved', contextId: options === undefined ? 'saved' : 'first/saved' };
+    act(() => view.publish({ status: 'ready', current: true, hasMore: false, records: [{ record, value: { emoji: '🌱' } }] }));
+    expect(hook.result.current.record).toBe(record);
+    expect(hook.result.current.data).toEqual({ emoji: '🌱' });
+    expect(hook.result.current.isMissing).toBe(false);
+    const error = new Error('Read denied');
+    act(() => view.publish({ status: 'error', error, current: false, hasMore: false, records: [] }));
+    expect(hook.result.current.error).toBe(error);
+    expect(hook.result.current.isMissing).toBe(false);
+    await act(async () => { await hook.result.current.set.mutateAsync({ emoji: '✨' }); });
+    expect(api.set).toHaveBeenCalledWith(path, { data: { emoji: '✨' }, ...options });
+  });
+
+  it('resolves writes through native reads while observation is paused', async () => {
+    const { api, wrapper } = setup();
+    const hook = renderHook(() => useEnboxRecord(protocol, 'space/choice', { within: 'first', enabled: false }), { wrapper });
+    expect(hook.result.current.status).toBe('idle');
+    expect(hook.result.current.isMissing).toBe(false);
+    await act(async () => { await hook.result.current.patch.mutateAsync({ emoji: '✨' }); });
+    expect(api.read).toHaveBeenCalledWith('space/choice', { filter: {}, within: 'first' });
+    expect(api.patch).toHaveBeenCalledWith('space/choice', 'singleton', { emoji: '✨' });
+    api.read.mockResolvedValue(undefined);
+    await act(async () => {
+      await expect(hook.result.current.patch.mutateAsync({ emoji: 'Missing' })).rejects.toMatchObject({ status: { code: 404 } });
+      await hook.result.current.delete.mutateAsync();
+    });
+    expect(api.delete).not.toHaveBeenCalled();
+    expect(api.observe).not.toHaveBeenCalled();
+    expect(api.query).not.toHaveBeenCalled();
+  });
+
+  it('preserves native lookup failures without issuing writes', async () => {
+    const { api, wrapper } = setup();
+    const error = new Error('Native read failed');
+    api.read.mockRejectedValue(error);
+    const hook = renderHook(() => useEnboxRecord(protocol, 'choice'), { wrapper });
+    await act(async () => {
+      await expect(hook.result.current.patch.mutateAsync({ emoji: 'No' })).rejects.toBe(error);
+      await expect(hook.result.current.delete.mutateAsync()).rejects.toBe(error);
+    });
+    expect(hook.result.current.patch.error).toBe(error);
+    expect(hook.result.current.delete.error).toBe(error);
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('retires singleton controls on parent and ID-mode changes', async () => {
+    const { api, wrapper } = setup();
+    const saving = deferred<{ id: string; contextId: string }>();
+    api.set.mockImplementation(() => saving.promise);
+    const hook = renderHook(({ within, id }) => useEnboxRecord(protocol, 'space/choice', {
+      within, ...(id === undefined ? {} : { recordId: id }), enabled: false,
+    } as never), { wrapper, initialProps: { within: 'first', id: undefined as string | undefined } });
+    const captured = hook.result.current.set;
+    let issued!: Promise<unknown>;
+    act(() => { issued = captured.mutateAsync({ emoji: '🌱' }); });
+    hook.rerender({ within: 'second', id: undefined });
+    expect(hook.result.current.set.isPending).toBe(false);
+    expect(captured.isCurrent()).toBe(false);
+    await expect(captured.mutateAsync({ emoji: 'Old' })).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    const second = hook.result.current.patch;
+    hook.rerender({ within: 'second', id: 'selected' });
+    expect(hook.result.current).not.toHaveProperty('set');
+    await expect(second.mutateAsync({ emoji: 'Old' })).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    await act(async () => { saving.resolve({ id: 'singleton', contextId: 'first/singleton' }); await issued; });
+    expect(captured.isCurrent()).toBe(false);
+  });
+
+  it('keeps disabled selections inert and rejects ambiguous path scopes before observing', async () => {
+    const { api, wrapper } = setup();
+    const hook = renderHook(() => useEnboxRecord(protocol, 'space/choice', null), { wrapper });
+    await act(async () => {
+      await expect(hook.result.current.set.mutateAsync({ emoji: 'No' })).rejects.toBeInstanceOf(EnboxBindingChangedError);
+    });
+    expect(hook.result.current.isMissing).toBe(false);
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'space/note', { within: 'first' } as never), { wrapper })).toThrow('recordId');
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'space/note/choice', { within: 'first' }), { wrapper })).toThrow('direct parent');
+    expect(() => renderHook(() => useEnboxRecord(protocol, 'choice', { within: 'first' } as never), { wrapper })).toThrow('root records');
+    expect(api.observe).not.toHaveBeenCalled();
+    expect(api.set).not.toHaveBeenCalled();
   });
 });

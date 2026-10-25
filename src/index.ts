@@ -35,6 +35,7 @@ export type { RecordsOptions, RecordsResult } from './hooks/records.js';
 export { useEnboxRecord, useEnboxRecords } from './hooks/enbox-records.js';
 export type {
   EnboxRecordItem, EnboxRecordOptions, EnboxRecordResult, EnboxRecordsOptions, EnboxRecordsResult,
+  EnboxSingletonOptions, EnboxSingletonResult,
 } from './hooks/enbox-records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
 export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';

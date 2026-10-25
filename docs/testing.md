@@ -130,6 +130,12 @@ patch/delete through the hook with active and paused observations. That DOM
 test supplies Node byte-array and Blob primitives to the Node-only DWN harness;
 production paths use their normal platform primitives.
 
+Singleton coverage uses the same record fixtures and observer path. It checks
+direct record/data projection, ready-empty versus failed reads, invalid IDs and
+parent scopes, native lookup failures, and retired controls. Real encrypted DWN
+cases exercise root and nested set/patch/delete, occupant replacement and
+recreation, and active or paused observations.
+
 Close-completion regressions cover plain and selected owners closing reentrantly
 from native unsubscribe, abort, and view-close callbacks. Their promises remain
 pending until the already acquired native view finishes cleanup.

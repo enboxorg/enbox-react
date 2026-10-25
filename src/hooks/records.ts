@@ -6,7 +6,6 @@ import type {
   ProtocolDefinition,
   ProtocolPaths,
   RecordQuery,
-  TypedEnbox,
   TypedMaterializedRecord,
   TypedProtocol,
   TypedRecord,
@@ -16,6 +15,7 @@ import type {
 import { useCallback, useMemo } from 'react';
 
 import type { RecordViewResult } from './record-view.js';
+import type { SingletonPaths } from '../internal/singleton-paths.js';
 import { useRecordViewBinding } from './record-view.js';
 import { useConnectionStore } from './connection.js';
 import { selectQueryProperties, serializeQuery } from '../internal/serialize-query.js';
@@ -28,10 +28,6 @@ import {
 import { useOptionalEnboxClient } from '../provider.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { isRecordStore, type RecordStore } from '../config/record-store.js';
-
-/** Derive singleton paths from the native set contract, which owns eligibility. */
-type SingletonPaths<Definition extends ProtocolDefinition> =
-  Parameters<TypedEnbox<Definition>['records']['set']>[0];
 
 type DirectChildPaths<Paths, Parent extends string> = Paths extends `${Parent}/${infer Child}`
   ? Child extends `${string}/${string}` ? never : Paths
