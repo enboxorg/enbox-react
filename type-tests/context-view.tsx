@@ -27,8 +27,19 @@ type NativeMaterializedContext = MaterializedMemberContext<
   ContextMaterializedRecord<{ title: string }>
 >;
 const shared = createContextStore(open);
+declare const selected: ContextStore<NativeContext> & {
+  getSnapshot(): ContextViewResult<NativeContext> & { selection: 'owned' | 'member' };
+  getServerSnapshot(): ContextViewResult<NativeContext> & { selection: 'owned' | 'member' };
+};
+
+declare const clientOnly: ContextStore<NativeContext> & {
+  getSnapshot(): ContextViewResult<NativeContext> & { liveOnly: string };
+};
 
 export function ContextViewContracts(): void {
+  const maybeServer = useContextView(clientOnly);
+  // @ts-expect-error server snapshots need not contain client-only metadata
+  maybeServer.liveOnly;
   const nativeView: Promise<ContextView<NativeContext>> = open(new AbortController().signal);
   void nativeView;
   const result = useContextView(open);
@@ -55,6 +66,12 @@ export function ContextViewContracts(): void {
   const store: ContextStore<NativeContext> = shared;
   const borrowed: ContextViewResult<NativeContext> = useContextView(store);
   const borrowedContext: NativeContext | undefined = borrowed.contexts[0];
+  const selectedSnapshot = useContextView(selected);
+  const selectedAccess: 'owned' | 'member' = selectedSnapshot.selection;
+  void selectedAccess;
+  // @ts-expect-error borrowed context metadata keeps its declared type
+  const invalidAccess: number = selectedSnapshot.selection;
+  void invalidAccess;
   const ready: Promise<Extract<ContextViewResult<NativeContext>, { status: 'ready' }>> = store.ready();
   void borrowedContext;
   void ready;

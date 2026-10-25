@@ -1,6 +1,7 @@
 import type { RecordView } from '@enbox/browser';
 
 import type { RecordStore, RecordStoreOptions } from '../config/record-store.js';
+import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { reportCleanupError } from './errors.js';
 import { RecordViewObserver, type RecordViewResult } from './record-view-observer.js';
@@ -187,6 +188,6 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   }
 
   private notify(): void {
-    for (const listener of [...this.listeners]) if (this.listeners.has(listener)) listener();
+    notifyListeners(this.listeners);
   }
 }

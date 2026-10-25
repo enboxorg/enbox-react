@@ -17,6 +17,44 @@ describe('record view binding', () => {
     await observer.close();
   });
 
+  it.each(['binding', 'view'] as const)('keeps a replacement opened during %s cleanup', async (cleanup) => {
+    const first = new ControlledView(['first']);
+    const next = new ControlledView(['next']);
+    const open = vi.fn().mockResolvedValueOnce(first).mockResolvedValue(next);
+    let observer!: RecordViewObserver<string>;
+    let releaseReplacement = (): void => {};
+    let replaced = false;
+    const replace = (): void => {
+      if (replaced) return;
+      replaced = true;
+      releaseReplacement = observer.subscribe(() => {});
+    };
+    if (cleanup === 'view') {
+      const subscribe = first.subscribe;
+      vi.spyOn(first, 'subscribe').mockImplementation((notify) => {
+        const release = subscribe(notify);
+        return () => { release(); replace(); };
+      });
+    }
+    observer = new RecordViewObserver(open, {
+      bindingGuard: { isCurrent: () => true, subscribe: () => cleanup === 'binding' ? replace : () => {} },
+    });
+    const release = observer.subscribe(() => {});
+    try {
+      await observer.ready();
+      release();
+      await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(observer.getSnapshot().records).toEqual(['next']));
+      expect(first.close).toHaveBeenCalledOnce();
+      expect(next.close).not.toHaveBeenCalled();
+    } finally {
+      release();
+      releaseReplacement();
+      await observer.close();
+    }
+    expect(next.close).toHaveBeenCalledOnce();
+  });
+
   it('still aborts and closes its view when binding cleanup throws', async () => {
     const failure = new Error('binding cleanup failed');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

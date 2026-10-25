@@ -26,6 +26,7 @@ import {
   subscribeToConnectionBinding,
 } from '../internal/connection-binding.js';
 import { useOptionalEnboxClient } from '../provider.js';
+import { EnboxBindingChangedError } from '../errors.js';
 import { isRecordStore, type RecordStore } from '../config/record-store.js';
 
 /** Derive singleton paths from the native set contract, which owns eligibility. */
@@ -80,7 +81,14 @@ export type RecordsResult<Item> = RecordViewResult<Item> & Readonly<{
   loadMore: () => Promise<void>;
 }>;
 
+type PaginatedSnapshot<Snapshot> = Snapshot extends unknown
+  ? Omit<Snapshot, 'loadMore'> & Pick<RecordStore<unknown>, 'loadMore'>
+  : never;
+
 /** Borrow a shared store without requiring a provider or closing the store. */
+export function useRecords<Store extends RecordStore<unknown>>(store: Store): PaginatedSnapshot<
+  ReturnType<Store['getSnapshot']> | ReturnType<Store['getServerSnapshot']>
+>;
 export function useRecords<Item>(store: RecordStore<Item> | null): RecordsResult<Item>;
 /** Observe a bounded protocol selection; null options or enabled: false release its view. */
 export function useRecords<
@@ -160,7 +168,12 @@ export function useRecords<
   const { snapshot, observer } = useRecordViewBinding<
     Item | TypedRecord<DataForPath<Codecs, Path>> | TypedMaterializedRecord<DataForPath<Codecs, Path>>
   >(borrowsStore ? protocol as RecordStore<Item> | null : opener, borrowsStore ? undefined : bindingGuard);
-  const loadMore = useCallback(() => observer.loadMore(), [observer]);
+  const retry = snapshot.retry;
+  const loadMore = useCallback(() => {
+    // A selected store binds retry identity to its slot, even when a key is reused.
+    if (observer.getSnapshot().retry !== retry) return Promise.reject(new EnboxBindingChangedError());
+    return observer.loadMore();
+  }, [observer, retry]);
   const result = useMemo(
     () => Object.freeze({ ...snapshot, loadMore }),
     [snapshot, loadMore],

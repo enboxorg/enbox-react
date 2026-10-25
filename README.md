@@ -6,17 +6,14 @@ APIs.
 
 ## Create a dapp
 
-The `@enbox/create-dapp` generator is being prepared for its first npm release.
-It creates a standalone React application with wallet connection, a public
-profile card, and a small encrypted emoji-choice demo. The demo lives entirely
+The `@enbox/create-dapp` generator creates a standalone React application with wallet connection, a public
+profile card, and an encrypted personal task board. The demo lives entirely
 under `src/demo/`; the connection and profile shell can stay as you build.
-
-After publication:
 
 ```sh
 npm create @enbox/dapp@latest my-app
 cd my-app
-npm ci
+npm install
 npm run dev
 ```
 
@@ -33,11 +30,13 @@ bun run check
 bun run starter:dev
 ```
 
-`starter:dev` installs the starter's own frozen npm dependencies and serves
-its source with Vite. It uses the released SDK pinned in its manifest.
+`starter:dev` builds and packs the local SDK, installs it in the starter without
+changing the template manifest, and serves its source with Vite. It works before
+the SDK version is published. Vite reloads starter source edits; restart
+`starter:dev` after changing SDK source to pack and install the new build.
 `bun run test:browser` instead packs the current SDK and generator, creates an
-app outside this repository, and verifies its frozen install, types,
-production build, worker control, and offline reload. Connected-UI tests use
+app outside this repository, and verifies fresh npm/Bun installs, subsequent
+frozen installs, types, production build, worker control, and offline reload. Connected-UI tests use
 a controlled native client; they do not approve a real wallet account.
 
 The starter registers its application-owned worker before rendering or
@@ -50,6 +49,24 @@ npm also saves exact versions. The current peer pins are `@enbox/browser`
 `0.3.82` and React `18.3.1` or `19.3.0`. Development setup and intentional
 version changes are documented in
 [CONTRIBUTING.md](https://github.com/enboxorg/enbox-react/blob/main/CONTRIBUTING.md).
+
+## Choose a record API
+
+| Need | API |
+| --- | --- |
+| A local list with typed create, patch, and delete | `useEnboxRecords(protocol, path, options)` |
+| One record by its explicit ID | `useEnboxRecord(protocol, path, options)` |
+| Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
+| A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
+| One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
+| A selected slice of an existing store | `useObservableStore(store, fallback, selector)` |
+
+Domain hooks such as `useTasks(projectContextId)` fix paths and options in one
+module. Each call still owns its own view and mutation state. To share both,
+call the domain hook once in a parent and pass its result through props or
+context. For a view also used by headless controllers, create a store for the
+owning session/page, pass it through props or context, and close it or abort its
+owner signal when that scope ends. Give shared filters and pagination one owner.
 
 ## Define the application
 
@@ -232,35 +249,87 @@ visible while that read settles.
 
 ## Read and write records
 
+Define small domain hooks in an ordinary module:
+
 ```tsx
-import { useEnboxMutation, useRecords } from '@enbox/react';
+import { useEnboxRecords } from '@enbox/react';
 import { NotesProtocol } from './application.js';
 
-export function Notes() {
-  const notes = useRecords(NotesProtocol, 'note', {
-    materialize: true,
-    pagination: { limit: 20 },
-  });
-  const create = useEnboxMutation(async (enbox, data: { title: string }) =>
-    enbox.using(NotesProtocol).records.create('note', { data }));
+export function useNotes() {
+  return useEnboxRecords(NotesProtocol, 'note');
+}
 
-  return (
-    <>
-      <button
-        disabled={notes.status === 'idle' || create.isPending}
-        onClick={() => { void create.run({ title: 'Hello' }).catch(() => {}); }}
-      >Add note</button>
-      {create.error && <p role="alert">{create.error.message}</p>}
-      {notes.error && <p role="alert">{notes.error.message}</p>}
-      <ul>{notes.records.map(({ record, value }) => <li key={record.id}>{value.title}</li>)}</ul>
-    </>
-  );
+export function Notes() {
+  const notes = useNotes();
+  return <>
+    <button disabled={!notes.isReady || notes.create.isPending}
+      onClick={() => notes.create.mutate({ title: 'Hello' })}>Add note</button>
+    {notes.create.error && <p role="alert">{notes.create.error.message}</p>}
+    {notes.error && <p role="alert">{notes.error.message}</p>}
+    <ul>{notes.records.map(({ id, data }) => <li key={id}>{data.title}</li>)}</ul>
+  </>;
 }
 ```
 
-Paths, filters, decoded values, and mutation variables remain inferred.
-Nested views require `within`, using the parent's exact context ID. Inline
-query objects with equal contents keep the same view.
+`useEnboxRecords` materializes a local, session-owned collection with `create`,
+`patch`, and `delete` commands. Rows expose `id`, `contextId`, decoded `data`,
+and the native `record`. Data is a read-only TypeScript snapshot; use commands
+to persist edits. `patch.mutate({ id, patch })` updates selected fields;
+`delete.mutate(id)` deletes a record. Patch/delete provide `isPendingFor(id)`
+for row controls. Payloads and patches follow the protocol's codecs.
+A patch can also be a pure producer, such as
+`oneNote.patch.mutate((current) => ({ done: !current.done }))`. It receives the
+native current value and may return `undefined` to skip the write. Native
+conflict recovery may call it again, so keep UI effects outside the producer.
+
+`useEnboxRecord(Protocol, path, { recordId, within })` reads one record and
+provides its `data`, native `record`, `patch`, and `delete` commands. Root paths
+omit `within`. An ID is always required, including for a protocol singleton;
+there is no schema-dependent selection mode. Its commands stay bound to that
+ID regardless of the displayed data.
+
+Use native operations through `useEnboxMutation` for additional behavior, such
+as replacing or creating a schema-declared singleton with `records.set`.
+
+Nested hooks require their direct parent's exact context ID; root selections
+reject `within`. Pass `null` while no parent is selected. `enabled: false`
+pauses reads while preserving a valid command scope. Query filters affect only
+reads and are never merged into writes. Parent changes retire captured commands;
+patch/delete check that a supplied ID belongs to the selected parent.
+
+`mutate` is an event-handler action: native failures appear in the command's
+`error`. `mutateAsync` returns the native result and rejects with the original
+cause. Each command has its own pending/error state. Use explicit async code
+for draft clearing or navigation:
+
+```tsx
+async function addNote() {
+  try {
+    await notes.create.mutateAsync({ title: draft });
+    if (notes.create.isCurrent()) setDraft('');
+  } catch {
+    // Render notes.create.error alongside the form.
+  }
+}
+```
+
+The captured command's `isCurrent()` checks its session, selection, and
+subscription lifetime before caller UI effects after `await`. Draft versions
+and other application state remain application-owned. Native views update
+displayed data; these hooks add no optimistic overlay or write retry.
+
+The collection defaults to a page limit of 20; pass `pagination` to change it.
+`loadMore()` and `retry()` publish failures in query state. Their returned
+Promises still reject when awaited, and ignoring them in event handlers is safe.
+Each hook owns its view; use the shared-store APIs below when multiple consumers
+need to share one view. No global private-data cache or state-library dependency
+is introduced. The generated example's `use-task-board.ts` shows this module pattern
+for projects, child tasks, and a selected task’s detail panel.
+
+Use the lower-level `useRecords` and `useEnboxMutation` for remote or
+role-authorized operations, lazy file payloads, custom creates, and other
+native SDK features. `useRecords(Protocol, path, options)` retains its existing
+materialization and pagination contracts:
 
 Without `materialize`, rows are native record handles and their payloads
 remain lazy. `materialize: { children: ['note/preview'] }` also decodes selected
@@ -296,9 +365,16 @@ const stop = notes.subscribe(() => updateIndex(notes.getSnapshot().records));
 await notes.ready();
 ```
 
-React consumers use `useRecords(notes)` or `useRecordView(notes)`. They share
+React consumers use `useRecords(notes)` or `useRecordView(notes)`. Both preserve
+additional snapshot fields such as a selected store’s `selection`. Custom stores
+should include shared metadata in both live and server snapshots; otherwise the
+result type reflects its absence during server rendering. They share
 the controller's view and pagination. Unmounting one consumer leaves the
 store available to the others. No provider is required for a supplied store.
+A count-only component can subscribe to the same owner with
+`useObservableStore(notes, 0, (state) => state.records.length)`; it rerenders
+when the selected count changes without opening another view.
+
 Construction is inert. The first subscriber, `ready()`, or `retry()` starts
 the view, which stays open until the owner calls `notes.close()` or its lifetime signal
 aborts. Release controller subscriptions with `stop()` when retiring them.
@@ -384,14 +460,18 @@ For controllers and React consumers sharing a catalog, use
 Mutation runners check the rendered facade and session before executing and
 reject obsolete bindings. Each invocation has its own Promise. `pendingCount`
 counts current work, the latest invocation owns the displayed error, and
-`reset()` clears that error without cancelling writes. Issued operations can
-finish after replacement or unmount. Guard caller-side work after `await`
+`reset()` clears that error without cancelling writes. `run` is the
+compatibility alias for `mutateAsync`.
+Issued operations can finish after replacement or unmount. Guard caller-side work after `await`
 against session or context changes; the library cannot undo a completed write.
 Use the captured mutation's `isCurrent()` before UI effects after `await` to
-check that its connection binding is still active. Pass `{ scope: pageId }`
-when the mutation also belongs to a page or dialog. Changing that scope resets
+check that its connection binding and subscription lifetime are still active.
+Old guards stay retired after Activity hides and restores the same component.
+Pass `{ scope: pageId }` when the mutation also belongs to a page or dialog. Changing that scope resets
 pending/error presentation and retires captured controls while issued writes
-retain their original Promise outcomes.
+retain their original Promise outcomes. Use a stable scope key, such as a
+record ID; a new object reference creates a new scope. Scope changes retire
+presentation rather than queueing calls; concurrent invocations remain parallel.
 
 `pendingVariables` lists each current invocation's input in start order,
 including concurrent calls with identical inputs. Derive per-row busy state

@@ -1,33 +1,57 @@
-import type { ConnectionSnapshot, ConnectionStore, Enbox, RecordView, RecordViewState } from '@enbox/browser';
+import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
 import { AgentSession, ConnectDeniedError } from '@enbox/browser';
 import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/App.js';
-import type { Choice } from '../src/demo/protocol.js';
+import type { Project, Task } from '../src/demo/protocol.js';
 import '../src/style.css';
 
 // Control only the native boundary. The starter uses the actual React SDK.
 const parameters = new URLSearchParams(location.search);
-type Row = { record: { id: string }; value: Choice };
+type Row = { record: { id: string; contextId: string }; value: Project | Task };
+type Entry = Row & { path: string; within: string | undefined };
+const entries = new Map<string, Entry>();
 const views = new Set<FixtureView>();
-let choice: Choice | undefined;
+let sequence = 0;
 let failRead = parameters.has('read-error');
+let failDetailRead = parameters.has('detail-read-error');
 let failWrite = parameters.has('write-error');
 let finishSave: (() => void) | undefined;
 let needsRepair = parameters.has('repair');
 
-function currentRows(): Row[] {
-  return choice === undefined ? [] : [{ record: { id: 'choice' }, value: choice }];
+function create(path: string, data: Row['value'], within?: string): Row['record'] {
+  const id = `record${++sequence}`;
+  const record = { id, contextId: within === undefined ? id : `${within}/${id}` };
+  entries.set(id, { path, within, record, value: data });
+  for (const view of views) view.publish();
+  return record;
+}
+if (parameters.has('seed')) {
+  const project = create('project', { name: 'First project' });
+  create('project/task', { title: 'First task', completed: false }, project.contextId);
 }
 
-class FixtureView implements RecordView<Row> {
-  private state: Extract<RecordViewState<Row>, { status: 'ready' }> = {
-    status: 'ready', records: currentRows(), hasMore: false, current: true,
-  };
+class FixtureView implements ExpandableRecordView<Row> {
+  private state: Extract<RecordViewState<Row>, { status: 'ready' }>;
   private readonly listeners = new Set<(state: RecordViewState<Row>) => void>();
-
+  private limit: number;
+  public constructor(private readonly path: string, private readonly within: string | undefined,
+    private readonly recordId: string | undefined, private readonly pageSize: number, private readonly descending: boolean) {
+    this.limit = pageSize;
+    this.state = this.snapshot();
+  }
+  private rows(): Row[] {
+    const rows = [...entries.values()].filter((entry) => entry.path === this.path && entry.within === this.within
+      && (this.recordId === undefined || entry.record.id === this.recordId));
+    return this.descending ? rows.reverse() : rows;
+  }
+  private snapshot(): typeof this.state {
+    const rows = this.rows();
+    return { status: 'ready', records: rows.slice(0, this.limit), hasMore: rows.length > this.limit, current: true };
+  }
+  public async loadMore(): Promise<void> { this.limit += this.pageSize; this.publish(); }
   public getSnapshot(): RecordViewState<Row> { return this.state; }
   public subscribe(listener: (state: RecordViewState<Row>) => void): () => void {
     this.listeners.add(listener);
@@ -36,9 +60,14 @@ class FixtureView implements RecordView<Row> {
   public async ready(): Promise<typeof this.state> { return this.state; }
   public async close(): Promise<void> { this.listeners.clear(); views.delete(this); }
   public publish(): void {
-    this.state = { ...this.state, records: currentRows() };
+    this.state = this.snapshot();
     for (const listener of this.listeners) listener(this.state);
   }
+}
+
+async function beforeWrite(): Promise<void> {
+  if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
+  if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
 }
 
 const enbox = {
@@ -52,18 +81,32 @@ const enbox = {
     read: async () => ({ status: { code: 404 } }),
   } },
   using: () => ({ records: {
-    observe: async () => {
+    observe: async (path: string, options: { within?: string; filter?: { recordId?: string }; pagination: { limit: number }; dateSort?: string }) => {
       if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
-      const view = new FixtureView();
+      if (failDetailRead && options.filter?.recordId !== undefined) {
+        failDetailRead = false;
+        throw new Error('Fixture task read failed.');
+      }
+      const view = new FixtureView(path, options.within, options.filter?.recordId, options.pagination.limit, options.dateSort === 'createdDescending');
       views.add(view);
       return view;
     },
-    set: async (_path: string, request: { data: Choice }) => {
-      if (parameters.has('defer-save')) await new Promise<void>((resolve) => { finishSave = resolve; });
-      if (failWrite) { failWrite = false; throw new Error('Fixture save failed.'); }
-      choice = request.data;
+    create: async (path: string, request: { data: Row['value']; parentContextId?: string }) => {
+      await beforeWrite();
+      return create(path, request.data, request.parentContextId);
+    },
+    read: async (_path: string, id: string) => entries.get(id)?.record,
+    patch: async (_path: string, id: string, patch: Partial<Task>) => {
+      await beforeWrite();
+      const entry = entries.get(id)!;
+      entries.set(id, { ...entry, value: { ...entry.value, ...patch } });
       for (const view of views) view.publish();
-      return { id: 'choice' };
+      return entry.record;
+    },
+    delete: async (_path: string, request: { recordId: string }) => {
+      await beforeWrite();
+      entries.delete(request.recordId);
+      for (const view of views) view.publish();
     },
   } }),
 } as unknown as Enbox;
@@ -104,7 +147,16 @@ const client = {
   dispose: async () => { sessionLifetime?.abort(); },
 } satisfies ConnectionStore;
 
-Object.assign(window, { __starterFixture: { finishSave: () => finishSave?.() } });
+Object.assign(window, { __starterFixture: {
+  finishSave: () => finishSave?.(),
+  removeTasks: () => {
+    for (const [id, entry] of entries) {
+      if (entry.path === 'project/task') entries.delete(id);
+    }
+    for (const view of views) view.publish();
+  },
+  addProjects: (count: number) => { for (let index = 0; index < count; index++) create('project', { name: `Remote project ${index}` }); },
+} });
 createRoot(document.getElementById('root')!).render(
   <StrictMode><EnboxProvider client={client}><App /></EnboxProvider></StrictMode>,
 );

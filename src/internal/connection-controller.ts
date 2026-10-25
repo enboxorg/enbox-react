@@ -4,6 +4,7 @@ import type {
 } from '@enbox/browser';
 import { BrowserConnectHandler, isConnectDeniedError } from '@enbox/browser';
 
+import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { isConnectionBindingCurrent } from './connection-binding.js';
 import { reportCleanupError, toError } from './errors.js';
@@ -201,7 +202,7 @@ export class ConnectionController {
         if (options?.wallet !== undefined) {
           if (options.connectHandler !== undefined) throw new TypeError('Choose wallet options or a connectHandler, not both.');
           const { wallet, ...rest } = options;
-          // Per-call wallet choice keeps the app identity configured by the provider.
+          // Per-call wallet options inherit the provider's app identity defaults.
           nativeOptions = { ...rest, connectHandler: BrowserConnectHandler({ ...this.walletDefaults, ...wallet }) };
         }
       }
@@ -310,5 +311,5 @@ export class ConnectionController {
     this.workflow = Object.freeze({ ...this.workflow, ...change });
     this.notify();
   }
-  private notify(): void { for (const listener of this.listeners) listener(); }
+  private notify(): void { notifyListeners(this.listeners); }
 }

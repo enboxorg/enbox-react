@@ -38,6 +38,8 @@ those consumers.
 The opener and protocol overloads of `useRecordView` and `useRecords` own
 their views. Each has independent pagination state and a view lifetime.
 Both hooks also borrow a `RecordStore` created with `createRecordStore`.
+Borrowed pagination captures the rendered selection’s retry identity, so a
+retained action cannot expand a different selection or a later reuse of its key.
 Such a store is shared with headless controllers; its owner closes it or
 aborts its scope signal. The first subscriber, readiness waiter, or explicit
 `retry()` starts the view, and consumer unsubscription does not retire it. Supplied stores carry
@@ -69,9 +71,15 @@ and recovery-phrase UI stay application-owned. The advanced
 without the provider's application guards or presentation workflow; their raw
 snapshot outcomes retain the native contract.
 
-Subscription cleanup detaches its own handle before calling native cleanup,
-which can synchronously subscribe again. Mutation cleanup also retires its old
+Subscription cleanup detaches its own handles and presentation before calling
+native cleanup, which can synchronously subscribe again. Mutation cleanup also retires its old
 presentation first, so it cannot erase work started by a replacement subscriber.
+
+All adapters snapshot their subscriber set at the start of each publication.
+Subscriptions added during that dispatch wait for the next publication, and
+subscriptions removed before their turn are skipped. Nested publications take
+their own snapshot. The same internal dispatcher covers record/context views,
+selected stores, connection presentation, mutations, and profiles.
 
 ## Profile resources
 
@@ -141,7 +149,10 @@ opening and attaching, and prevents a listener returned after retirement from
 remaining attached. A late opening closes its returned view.
 
 Cleanup invalidates the attempt, detaches listeners, aborts the signal, and
-closes the view. Cleanup errors are reported through
+closes the view. The entire retiring attempt is registered for close completion
+before unsubscribe, abort, or native close callbacks can reenter the owner.
+A reentrant close therefore waits for already acquired views too. Cleanup
+errors are reported through
 `console.warn('[@enbox/react] Resource cleanup failed.', cause)`.
 
 | State/control | Meaning |
@@ -178,7 +189,9 @@ Without materialization, rows are native typed record handles. With
 `materialize: true`, rows contain the handle and decoded value. Object
 materialization preserves the SDK's selected direct singleton children and
 infers each child's codec. Singleton eligibility derives from the native `set`
-contract. Codecs provide TypeScript inference; a codec validator provides
+contract. `useEnboxRecord` requires a nonempty explicit ID at runtime; malformed
+JavaScript IDs cannot turn into an unfiltered selection.
+Codecs provide TypeScript inference; a codec validator provides
 runtime payload validation.
 
 ## Mutations
@@ -203,8 +216,9 @@ Issued writes can complete after replacement or unmount. Application code
 must guard its own work after `await`, including draft clearing or navigation,
 against changes to the session, selected context, and component lifetime.
 The captured mutation's `isCurrent()` checks that its observer and connection
-binding are currently active before those UI effects. An explicit `{ scope: pageId }`
-retires captured controls when the scope changes. Draft versions and other
+binding are currently active before those UI effects. A guard captured before
+unsubscription stays retired after Activity resumes the same observer.
+An explicit `{ scope: pageId }` retires captured controls when the scope changes. Draft versions and other
 application state still need application checks.
 
 ## Server rendering and browser startup
@@ -218,8 +232,48 @@ Create fresh inert clients for server renders and retain one client in the
 browser. Keep stores and codec-bearing manifests inside the application's
 client boundary; they cannot be serialized as server-component props.
 
-The standalone starter registers its own service worker and waits for that worker
-to control the page before rendering the provider. It activates the remaining
-browser polyfills separately. The browser SDK currently activates worker
-updates automatically. Apps requiring deferred activation must account for
-that behavior when protecting unsaved edits.
+The standalone starter calls the native `prepareBrowser` helper with its own
+worker URL and registration scope. This waits for worker control before rendering
+the provider. The browser SDK activates worker updates automatically. Apps
+requiring deferred activation must account for that behavior when protecting
+unsaved edits.
+
+## Local record commands
+
+`useEnboxRecords` and `useEnboxRecord` compose existing query and mutation hooks.
+They own no additional cache or native record lifetime. Collections materialize
+payloads; one-record views use a bounded ID filter. Role paths and remote/role
+query options are excluded from these convenience APIs; lower-level hooks
+retain those native capabilities.
+
+Command identity includes protocol, path, parent context, explicit record ID,
+and active selection. Query filters, pagination, and read enablement do not
+retarget commands. View updates do not retire commands; changing the selection
+parameters does. Null disables selection. There is no schema inspection,
+implicit singleton target resolution, or generic upsert behavior in these hooks.
+
+Convenience selections require their direct parent context. Native patch is
+path-bound, so nested ID patch/delete first read immutable context metadata and
+reject a different direct parent. The native SDK retains missing-record,
+encryption, validation, authorization, and conflict behavior.
+
+`mutate` handles its returned rejection after state records the native error;
+`mutateAsync` and existing `run` preserve the native outcome. Application code
+owns post-write UI effects and checks the captured command's `isCurrent()`
+after awaiting it. There is no success-callback pipeline. Convenience query
+controls similarly mark their returned Promise handled without changing what
+an awaiting caller receives. These hooks add no retries or optimistic rows.
+Domain hook modules are ordinary static React hooks.
+
+Context hooks return the owner's snapshot and retry control directly, preserving
+owner metadata and captured-selection semantics. Domain hooks share logic;
+shared views use explicit owner stores. Selectors read those stores without
+another native observer. CI builds declarations once in `check`; consumer
+scripts use those same outputs. Standalone public consumer commands still build
+before packing.
+
+Borrowed view overloads preserve both live and server snapshot types. A field
+available only on a live custom snapshot is not promised during SSR/hydration.
+Owner stores that expose selection metadata in both snapshots retain that field.
+The record hook adds its own pagination control, replacing a same-named custom
+snapshot field in both the runtime result and its type.

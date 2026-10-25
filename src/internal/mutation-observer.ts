@@ -2,6 +2,7 @@ import type { ConnectionStore, Enbox } from '@enbox/browser';
 
 import type { ConnectionBinding } from './connection-binding.js';
 import { isConnectionBindingCurrent, subscribeToConnectionBinding } from './connection-binding.js';
+import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError, EnboxNotConnectedError } from '../errors.js';
 import { reportCleanupError, toError } from './errors.js';
 
@@ -23,7 +24,8 @@ const EMPTY: EnboxMutationSnapshot<never> = Object.freeze({
 export class EnboxMutationObserver<Variables = unknown> {
   private readonly _listeners = new Set<() => void>();
   private readonly _pendingInvocations = new Map<number, Variables>();
-  private _snapshot: EnboxMutationSnapshot<Variables> = EMPTY;
+  private _emptySnapshot: EnboxMutationSnapshot<Variables> = Object.freeze({ ...EMPTY });
+  private _snapshot: EnboxMutationSnapshot<Variables> = this._emptySnapshot;
   private _subscriptionGeneration = 0;
   private _latestInvocationId = 0;
   private _unsubscribe: (() => void) | undefined;
@@ -33,14 +35,13 @@ export class EnboxMutationObserver<Variables = unknown> {
     private readonly _binding: ConnectionBinding,
   ) {}
 
-  public readonly getSnapshot = (): EnboxMutationSnapshot<Variables> => this.isCurrent() ? this._snapshot : EMPTY;
+  public readonly getSnapshot = (): EnboxMutationSnapshot<Variables> => this.isCurrent() ? this._snapshot : this._emptySnapshot;
   public readonly getServerSnapshot = (): EnboxMutationSnapshot<Variables> => EMPTY;
   public readonly subscribe = (notify: () => void): (() => void) => {
     // Each subscription owns its cleanup, even when callbacks are identical.
     const listener = (): void => { notify(); };
     this._listeners.add(listener);
     if (this._listeners.size === 1) {
-      this._subscriptionGeneration += 1;
       this._unsubscribe = subscribeToConnectionBinding(this._client, this._binding, () => {
         if (!this.isCurrent()) this.clear();
       });
@@ -101,6 +102,12 @@ export class EnboxMutationObserver<Variables = unknown> {
   public readonly isCurrent = (): boolean => this._listeners.size > 0
     && isConnectionBindingCurrent(this._client, this._binding);
 
+  /** Capture a UI guard that cannot become current again after resubscription. */
+  public captureGuard(): () => boolean {
+    const generation = this._subscriptionGeneration;
+    return () => this._subscriptionGeneration === generation && this.isCurrent();
+  }
+
   private canPublish(generation: number): boolean {
     return generation === this._subscriptionGeneration && this.isCurrent();
   }
@@ -108,7 +115,9 @@ export class EnboxMutationObserver<Variables = unknown> {
   private clear(): void {
     this._subscriptionGeneration += 1;
     this._pendingInvocations.clear();
-    this._snapshot = EMPTY;
+    // A new identity makes React replace UI guards even when both lifetimes are idle.
+    this._emptySnapshot = Object.freeze({ ...EMPTY });
+    this._snapshot = this._emptySnapshot;
     this.notify();
   }
 
@@ -116,7 +125,7 @@ export class EnboxMutationObserver<Variables = unknown> {
     const pendingCount = this._pendingInvocations.size;
     if (pendingCount === this._snapshot.pendingCount && error === this._snapshot.error) return;
     this._snapshot = pendingCount === 0 && error === undefined
-      ? EMPTY
+      ? this._emptySnapshot
       : Object.freeze({
         pendingCount,
         pendingVariables: pendingCount === this._snapshot.pendingCount
@@ -128,6 +137,6 @@ export class EnboxMutationObserver<Variables = unknown> {
   }
 
   private notify(): void {
-    for (const listener of this._listeners) listener();
+    notifyListeners(this._listeners);
   }
 }

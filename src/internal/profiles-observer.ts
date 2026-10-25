@@ -4,6 +4,7 @@ import type {
 } from '@enbox/browser';
 import { createBlobUrlPool, createProfileReader } from '@enbox/browser';
 import { reportCleanupError } from './errors.js';
+import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError } from '../errors.js';
 
 export type ResolvedProfile = Readonly<NonNullable<ProfileSnapshot['profile']['value']> & {
@@ -186,27 +187,32 @@ export class ProfilesObserver {
   }
 
   private stop(): void {
-    // Retire callbacks before invoking native cleanup, which can notify listeners.
+    // Detach this lifetime before native cleanup can subscribe a replacement.
     this.active = false;
     this.generation += 1;
+    const stopWatch = this.stopWatch;
+    const stopImageWatches = [...this.lazyImageWatches.values()];
+    const bindings = this.bindings;
+    const releaseReader = this.releaseReader;
+    const releaseLazyImageReader = this.releaseLazyImageReader;
     this.reader = undefined;
     this.lazyImageReader = undefined;
-    try { this.stopWatch?.(); } catch (cause) { reportCleanupError(cause); }
     this.stopWatch = undefined;
-    for (const stop of this.lazyImageWatches.values()) {
+    this.lazyImageWatches.clear();
+    this.bindings = new Map();
+    this.snapshot = this.idleProfiles;
+    this.releaseReader = undefined;
+    this.releaseLazyImageReader = undefined;
+    try { stopWatch?.(); } catch (cause) { reportCleanupError(cause); }
+    for (const stop of stopImageWatches) {
       try { stop?.(); } catch (cause) { reportCleanupError(cause); }
     }
-    this.lazyImageWatches.clear();
-    for (const binding of this.bindings.values()) {
+    for (const binding of bindings.values()) {
       releaseReplacedImage(binding.avatar);
       releaseReplacedImage(binding.hero);
     }
-    this.bindings.clear();
-    this.snapshot = this.idleProfiles;
-    this.releaseReader?.();
-    this.releaseReader = undefined;
-    this.releaseLazyImageReader?.();
-    this.releaseLazyImageReader = undefined;
+    releaseReader?.();
+    releaseLazyImageReader?.();
   }
 
   private isCurrent(generation: number): boolean {
@@ -315,6 +321,6 @@ export class ProfilesObserver {
     }
     if (nextProfiles === undefined) return;
     this.snapshot = nextProfiles;
-    for (const listener of this.listeners) listener();
+    notifyListeners(this.listeners);
   }
 }
