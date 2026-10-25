@@ -270,21 +270,31 @@ describe('singleton selections', () => {
     expect(api.set).toHaveBeenCalledWith(path, { data: { emoji: '✨' }, ...options });
   });
 
-  it('resolves writes through native reads while observation is paused', async () => {
-    const { api, wrapper } = setup();
-    const hook = renderHook(() => useEnboxRecord(protocol, 'space/choice', { within: 'first', enabled: false }), { wrapper });
-    expect(hook.result.current.status).toBe('idle');
+  it.each([true, false])('resolves the current occupant with observation enabled=%s', async (enabled) => {
+    const { api, view, wrapper } = setup<{ emoji: string }>();
+    view.publish({ status: 'ready', current: true, hasMore: false, records: [
+      { record: { id: 'stale', contextId: 'first/stale' }, value: { emoji: '🌱' } },
+    ] });
+    const hook = renderHook(() => useEnboxRecord(protocol, 'space/choice', { within: 'first', enabled }), { wrapper });
+    if (enabled) await waitFor(() => expect(hook.result.current.record?.id).toBe('stale'));
+    else expect(hook.result.current.status).toBe('idle');
     expect(hook.result.current.isMissing).toBe(false);
-    await act(async () => { await hook.result.current.patch.mutateAsync({ emoji: '✨' }); });
+    await act(async () => {
+      await hook.result.current.patch.mutateAsync({ emoji: '✨' });
+      await hook.result.current.delete.mutateAsync();
+    });
     expect(api.read).toHaveBeenCalledWith('space/choice', { filter: {}, within: 'first' });
     expect(api.patch).toHaveBeenCalledWith('space/choice', 'singleton', { emoji: '✨' });
+    expect(api.delete).toHaveBeenCalledExactlyOnceWith('space/choice', { recordId: 'singleton', within: 'first' });
+    if (enabled) expect(hook.result.current.record?.id).toBe('stale');
+    api.delete.mockClear();
     api.read.mockResolvedValue(undefined);
     await act(async () => {
       await expect(hook.result.current.patch.mutateAsync({ emoji: 'Missing' })).rejects.toMatchObject({ status: { code: 404 } });
       await hook.result.current.delete.mutateAsync();
     });
     expect(api.delete).not.toHaveBeenCalled();
-    expect(api.observe).not.toHaveBeenCalled();
+    expect(api.observe).toHaveBeenCalledTimes(enabled ? 1 : 0);
     expect(api.query).not.toHaveBeenCalled();
   });
 
