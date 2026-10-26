@@ -1,11 +1,11 @@
 export { createEnboxClient } from './client.js';
 export type { CreateEnboxClientOptions } from './client.js';
-export { createRecordStore, defineRecordStore } from './record-store.js';
+export { createRecordStore, createRecordsStore } from './record-store.js';
 export type {
   RecordStore, RecordStoreOptions, SelectedRecordStoreConfig, SelectedRecordStore, SelectedRecordSnapshot,
 } from './record-store.js';
 export type {
-  RecordDefinition, RecordStoreFor, RecordSelectionFor, EnboxRecordStore, EnboxRecordStoreOptions,
+  EnboxRecordStore,
   EnboxRecordsSnapshot, EnboxRecordSnapshot, EnboxSingletonSnapshot,
 } from './record-store.js';
 export { createContextStore } from './context-store.js';

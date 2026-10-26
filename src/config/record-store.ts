@@ -1,20 +1,21 @@
+import type { ConnectionStore, ContextRoleGroups, DataForPath, ProtocolDefinition, TypedProtocol } from '@enbox/browser';
 import type { RecordViewOpener, RecordViewResult } from '../internal/record-view-observer.js';
-import { RecordViewObserver } from '../internal/record-view-observer.js';
 import type { SelectedRecordStoreConfig, SelectedRecordStore } from '../internal/selected-record-store.js';
+import type {
+  AnyEnboxRecordStore, DataRecordPath, EnboxRecordOptions, EnboxRecordsOptions,
+  EnboxRecordStore, EnboxSingletonOptions, RecordKind,
+} from './record-types.js';
+import type { SingletonPaths } from '../internal/singleton-paths.js';
+
+import { RecordViewObserver } from '../internal/record-view-observer.js';
 import { SelectedRecords } from '../internal/selected-record-store.js';
-import type { AnyEnboxRecordStore, AnyRecordDefinition, RecordSelectionFor, RecordStoreFor } from './record-definition.js';
-import type { EnboxRecordStoreOptions } from '../internal/enbox-record-store.js';
-import { isRecordDefinition } from './record-definition.js';
 import { EnboxRecordOwner } from '../internal/enbox-record-store.js';
+import { singleRecordKind } from '../internal/record-commands.js';
 
-export { defineRecordStore } from './record-definition.js';
 export type {
-  EnboxRecordStore, RecordDefinition, RecordStoreFor, RecordSelectionFor,
-  EnboxRecordsOptions, EnboxRecordOptions, EnboxSingletonOptions,
+  EnboxRecordStore, EnboxRecordsOptions, EnboxRecordOptions, EnboxSingletonOptions,
   EnboxRecordItem, EnboxRecordsSnapshot, EnboxRecordSnapshot, EnboxSingletonSnapshot,
-} from './record-definition.js';
-export type { EnboxRecordStoreOptions } from '../internal/enbox-record-store.js';
-
+} from './record-types.js';
 export type { SelectedRecordStoreConfig, SelectedRecordStore, SelectedRecordSnapshot } from '../internal/selected-record-store.js';
 
 /** One owned view shared by React consumers and application controllers. */
@@ -39,37 +40,65 @@ export type RecordStoreOptions = {
   loadAll?: boolean;
 };
 
-/** Subscription, ready(), or retry() opens the view until close() or abort. */
-export function createRecordStore<Definition extends AnyRecordDefinition>(
-  definition: Definition,
-  options: EnboxRecordStoreOptions<RecordSelectionFor<Definition>>,
-): RecordStoreFor<Definition>;
+type TypedStoreConfig<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups, Path extends string> =
+  RecordStoreOptions & Readonly<{ client: ConnectionStore; protocol: TypedProtocol<D, C, R>; path: Path }>;
+type QueryOptions<Path extends string, Options> = Path extends `${string}/${string}`
+  ? { options: Options | null } : { options?: Options | null };
+type RuntimeStoreConfig = RecordStoreOptions & {
+  client: ConnectionStore; protocol: TypedProtocol; path: string; options?: object | null;
+};
+
+/** Create an explicit collection owner for controllers and borrowing React hooks. */
+export function createRecordsStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>,
+>(config: TypedStoreConfig<D, C, R, Path> & QueryOptions<Path, EnboxRecordsOptions<D, NoInfer<Path>>>):
+  EnboxRecordStore<DataForPath<C, Path>, EnboxRecordsOptions<D, Path>, 'collection'>;
+export function createRecordsStore(config: RuntimeStoreConfig): AnyEnboxRecordStore {
+  return createTypedStore(config, 'collection');
+}
+
+/** Observe a protocol-declared singleton without supplying a record ID. */
+export function createRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends SingletonPaths<D> & DataRecordPath<D>,
+>(config: TypedStoreConfig<D, C, R, Path> & QueryOptions<Path, EnboxSingletonOptions<NoInfer<Path>>>):
+  EnboxRecordStore<DataForPath<C, Path>, EnboxSingletonOptions<Path>, 'singleton'>;
+/** Observe one ordinary record by ID. */
+export function createRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>,
+>(config: TypedStoreConfig<D, C, R, Path> & { options: EnboxRecordOptions<NoInfer<Path>> | null }):
+  EnboxRecordStore<DataForPath<C, Path>, EnboxRecordOptions<Path>, 'record'>;
+/** Subscription, ready(), or retry() opens an arbitrary native view until close() or abort. */
 export function createRecordStore<Item>(
   opener: RecordViewOpener<Item> | null,
   options?: RecordStoreOptions,
 ): RecordStore<Item>;
-/** Create a store with a changeable selection; select() and retry() can also open its view. */
+/** Create a native view store with a changeable selection. */
 export function createRecordStore<Item, Selection>(
   config: SelectedRecordStoreConfig<Item, Selection>,
 ): SelectedRecordStore<Item, Selection>;
 export function createRecordStore<Item, Selection>(
-  opener: RecordViewOpener<Item> | null | SelectedRecordStoreConfig<Item, Selection> | AnyRecordDefinition,
-  options: RecordStoreOptions | EnboxRecordStoreOptions = {},
+  opener: RecordViewOpener<Item> | null | SelectedRecordStoreConfig<Item, Selection> | RuntimeStoreConfig,
+  options: RecordStoreOptions = {},
 ): RecordStore<Item> | SelectedRecordStore<Item, Selection> | AnyEnboxRecordStore {
-  if (isRecordDefinition(opener)) {
-    if (!('client' in options)) throw new TypeError('Typed record stores require a connection client.');
-    return new EnboxRecordOwner(opener, {
-      client: options.client,
-      ...(Object.hasOwn(options, 'selection') ? { selection: options.selection } : {}),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.loadAll === undefined ? {} : { loadAll: options.loadAll }),
-    });
+  if (opener !== null && typeof opener === 'object') {
+    if ('protocol' in opener) return createTypedStore(opener, singleRecordKind(opener.protocol, opener.path, opener.options));
+    return new SelectedRecords(opener);
   }
-  if (opener !== null && typeof opener === 'object') return new SelectedRecords(opener);
   return new RecordViewObserver(opener, {
     ownerSignal: options.signal,
     retainWithoutSubscribers: true,
     loadAll: options.loadAll === true,
+  });
+}
+
+function createTypedStore(config: RuntimeStoreConfig, kind: RecordKind): AnyEnboxRecordStore {
+  return new EnboxRecordOwner({ protocol: config.protocol, path: config.path, kind }, {
+    client: config.client, selection: config.options === undefined ? {} : config.options,
+    ...(config.signal === undefined ? {} : { signal: config.signal }),
+    ...(config.loadAll === undefined ? {} : { loadAll: config.loadAll }),
   });
 }
 

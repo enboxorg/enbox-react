@@ -6,22 +6,16 @@ import './demo.css';
 
 export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const projects = useProjects();
-  const tasks = useTasks();
-  const task = useTask();
-  const projectContextId = tasks.selection?.within;
+  const [projectContextId, setProjectContextId] = useState<string>();
   const [name, setName] = useState('');
   const prompt = projects.isLoading ? 'Loading projects…'
     : projects.isReady && projects.records.length === 0 ? 'Create your first project to get started.'
       : 'Select a project to see its tasks.';
-  function selectProject(within: string) {
-    task.select(null);
-    tasks.select({ within });
-  }
   async function addProject(event: FormEvent) {
     event.preventDefault();
     try {
       const record = await projects.create.mutateAsync({ name: name.trim() });
-      if (projects.create.isCurrent()) { selectProject(record.contextId); setName(''); }
+      if (projects.create.isCurrent()) { setProjectContextId(record.contextId); setName(''); }
     } catch { /* The mutation error is rendered below. */ }
   }
   return (
@@ -43,31 +37,26 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
       </div>}
       <div className="project-picker" role="group" aria-label="Projects">
         {projects.records.map((project) => <button type="button" className="button button-quiet" key={project.id} disabled={disabled}
-          aria-pressed={project.contextId === projectContextId} onClick={() => selectProject(project.contextId)}>{project.data.name}</button>)}
+          aria-pressed={project.contextId === projectContextId} onClick={() => setProjectContextId(project.contextId)}>{project.data.name}</button>)}
       </div>
       {projects.hasMore && <button type="button" disabled={disabled || projects.isLoadingMore}
         onClick={() => projects.loadMore()}>More projects</button>}
       {projectContextId !== undefined
-        ? <ProjectTasks key={projectContextId} disabled={disabled} />
+        ? <ProjectTasks key={projectContextId} within={projectContextId} disabled={disabled} />
         : <p role="status">{prompt}</p>}
     </section>
   );
 }
 
-function ProjectTasks({ disabled }: { disabled: boolean }) {
-  const tasks = useTasks();
-  const selectedTask = useTask();
-  const selectedId = selectedTask.selection?.recordId;
+function ProjectTasks({ within, disabled }: { within: string; disabled: boolean }) {
+  const tasks = useTasks(within);
   const [title, setTitle] = useState('');
-  function selectTask(recordId: string) {
-    const within = tasks.selection?.within;
-    if (within !== undefined) selectedTask.select({ within, recordId });
-  }
+  const [selectedId, setSelectedId] = useState<string>();
   async function addTask(event: FormEvent) {
     event.preventDefault();
     try {
       const record = await tasks.create.mutateAsync({ title: title.trim(), completed: false });
-      if (tasks.create.isCurrent()) { selectTask(record.id); setTitle(''); }
+      if (tasks.create.isCurrent()) { setSelectedId(record.id); setTitle(''); }
     } catch { /* The mutation error is rendered below. */ }
   }
   return <div className="project-content">
@@ -88,21 +77,21 @@ function ProjectTasks({ disabled }: { disabled: boolean }) {
           disabled={disabled || tasks.patch.isPendingFor(task.id)}
           onChange={(event) => tasks.patch.mutate({ id: task.id, patch: { completed: event.currentTarget.checked } })} />
         <button type="button" className="button button-quiet" aria-label={`Open task ${task.data.title}`}
-          disabled={disabled} aria-pressed={task.id === selectedId} onClick={() => selectTask(task.id)}>{task.data.title}</button>
+          disabled={disabled} aria-pressed={task.id === selectedId} onClick={() => setSelectedId(task.id)}>{task.data.title}</button>
       </li>)}
     </ul>
     {tasks.hasMore && <button type="button" disabled={disabled || tasks.isLoadingMore}
       onClick={() => tasks.loadMore()}>More tasks</button>}
     {selectedId !== undefined
-      ? <TaskDetails key={selectedId} disabled={disabled} onClose={() => { selectedTask.select(null); }} />
+      ? <TaskDetails key={selectedId} within={within} recordId={selectedId} disabled={disabled} onClose={() => setSelectedId(undefined)} />
       : <p role="status">Select a task to see its details.</p>}
   </div>;
 }
 
-function TaskDetails({ disabled, onClose }: {
-  disabled: boolean; onClose: () => void;
+function TaskDetails({ within, recordId, disabled, onClose }: {
+  within: string; recordId: string; disabled: boolean; onClose: () => void;
 }) {
-  const task = useTask();
+  const task = useTask(within, recordId);
   const [draft, setDraft] = useState<string>();
   const pending = task.patch.isPending || task.delete.isPending;
   async function saveTitle(event: FormEvent) {

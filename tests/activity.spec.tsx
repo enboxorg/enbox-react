@@ -8,11 +8,10 @@ import { EnboxBindingChangedError, EnboxProvider, useContextView, useEnboxClient
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
 import { connected, controlledClient, ControlledView, deferred } from './helpers.js';
 import { protocol as recordProtocol, setup as recordSetup } from './record-fixture.js';
-import { defineRecordStore } from '../src/config/index.js';
-import { EnboxRecordsProvider, useEnboxRecords } from '../src/index.js';
+import { useEnboxRecords } from '../src/index.js';
 
 describe('React Activity', () => {
-  it('reopens registered record owners and keeps retired mutation guards obsolete', async () => {
+  it('reopens parameterized record views and keeps retired mutation guards obsolete', async () => {
     const { client, api } = recordSetup<{ name: string }>();
     const views: ControlledView<{ record: { id: string; contextId: string }; value: { name: string } }>[] = [];
     api.observe.mockImplementation(async () => {
@@ -20,15 +19,13 @@ describe('React Activity', () => {
       views.push(view);
       return view;
     });
-    const spaces = defineRecordStore({ protocol: recordProtocol, path: 'space' });
-    const sources = { spaces };
     const guards: (() => boolean)[] = [];
     function Content() {
-      const state = useEnboxRecords(spaces);
+      const state = useEnboxRecords(recordProtocol, 'space');
       guards.push(state.create.isCurrent);
       return <output>{state.status}</output>;
     }
-    const children = <EnboxRecordsProvider records={sources}><Content /></EnboxRecordsProvider>;
+    const children = <Content />;
     const element = (mode: 'visible' | 'hidden') => <EnboxProvider client={client}><Activity mode={mode}>{children}</Activity></EnboxProvider>;
     const tree = render(element('visible'));
     await waitFor(() => expect(tree.getByText('ready')).toBeDefined());

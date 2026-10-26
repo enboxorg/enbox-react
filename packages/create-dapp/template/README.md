@@ -41,8 +41,7 @@ accepting dependency or security fixes.
 `src/app.json` contains the display name used in the page, browser title, and
 wallet approval screen, plus a stable app ID. Changing the display name leaves
 the app ID and demo data namespace intact. `src/application.ts` defines the application manifest
-and wallet configuration, and exports the record definitions. `src/main.tsx`
-registers those definitions with the SDK provider; `src/App.tsx`
+and wallet configuration. `src/main.tsx` mounts the SDK provider; `src/App.tsx`
 contains the app shell without owning authentication state.
 
 The profile card reads published profile information through `useProfile`.
@@ -55,24 +54,23 @@ The removable demo lives entirely in `src/demo`:
 
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
-- `records.ts` declares the project collection, selected project's tasks, and
-  selected task. Each definition has one session-bound owner shared by its consumers.
 - `use-task-board.ts` defines `useProjects`, `useTasks`, and `useTask` with
-  `useEnboxRecords` and `useEnboxRecord`. These hooks bind the registered owners;
-  they contain no subscriptions or native CRUD wrappers. `select()` changes the
-  parent context or record ID, and `selection` supplies the current UI selection.
+  `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
+  parent context ID; task details also select an exact record ID. Selection IDs
+  live in React state, and separate detail panels can select different tasks.
 - `TaskBoard.tsx` renders the board and calls typed create, patch, and delete commands.
   Simple event handlers use `mutate`. Forms await `mutateAsync` and check
   `isCurrent()` before clearing drafts or closing details. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
 
-Controllers can import the same definitions and use
-`createRecordStore(definition, { client, signal })`. Register that store through
-`EnboxRecordsProvider` when React must consume a controller-owned resource. Its
-`commands` return native Promises; view ownership and CRUD remain in the SDK.
+If an imperative controller must share a view with React, create an explicit
+`createRecordsStore({ client, protocol, path, options, signal })` owner and pass
+it to `useEnboxRecords(store)`. `createRecordStore` and `useEnboxRecord` provide
+the corresponding single-record form. The owner exposes native Promise CRUD;
+React adds pending/error presentation. No resource registry is required.
 
-To replace the demo, register your own typed application protocol and record
-definitions in `application.ts`. Then delete `src/demo` and remove
+To replace the demo, register your own typed application protocol in
+`application.ts` in place of `TaskBoardProtocol`. Then delete `src/demo` and remove
 the `TaskBoard` import and component from `App.tsx`. Enbox requires at least one
 application protocol, so keep your replacement registered. The profile card,
 connection shell, and service worker remain the base for your app.

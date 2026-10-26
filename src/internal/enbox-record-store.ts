@@ -1,15 +1,14 @@
 import type { ConnectionStore, RecordView, TypedMaterializedRecord } from '@enbox/browser';
 import type {
-  AnyRecordCommands, LocalRecordSelection,
+  AnyRecordCommands, LocalRecordSelection, RecordDescriptor,
 } from './record-commands.js';
 import type {
-  AnyRecordDefinition, EnboxRecordItem, RecordDefinition, RecordKind, RecordSnapshotFor,
-} from '../config/record-definition.js';
+  EnboxRecordItem, RecordKind, RecordSnapshotFor,
+} from '../config/record-types.js';
 import type { ConnectionBinding } from './connection-binding.js';
 
-import { copyRecordOptions } from '../config/record-definition.js';
 import { EnboxBindingChangedError } from '../errors.js';
-import { assertRecordSelection, createRecordCommands, recordTargetKey } from './record-commands.js';
+import { assertRecordSelection, copyRecordOptions, createRecordCommands, recordTargetKey } from './record-commands.js';
 import {
   isConnectionBindingCurrent, selectConnectionBinding, subscribeToConnectionBinding,
 } from './connection-binding.js';
@@ -17,13 +16,11 @@ import { SelectedRecords, type SelectedRecordSnapshot } from './selected-record-
 import { serializeQuery } from './serialize-query.js';
 import { handledQuery } from './query-control.js';
 
-export type EnboxRecordStoreOptions<Selection = unknown> = Readonly<{
+type RecordOwnerOptions<Selection> = Readonly<{
   client: ConnectionStore;
-  selection?: Selection | null;
+  selection: Selection | null;
   signal?: AbortSignal;
   loadAll?: boolean;
-}>;
-type RecordOwnerOptions<Selection> = EnboxRecordStoreOptions<Selection> & Readonly<{
   binding?: ConnectionBinding;
   retainWithoutSubscribers?: boolean;
   commandScope?: object;
@@ -44,13 +41,13 @@ export class EnboxRecordOwner<T, Selection, Kind extends RecordKind> {
   private rows: readonly EnboxRecordItem<T>[] = Object.freeze([]);
 
   public constructor(
-    public readonly definition: RecordDefinition<T, Selection, Kind>,
+    private readonly descriptor: RecordDescriptor & { kind: Kind },
     private readonly options: RecordOwnerOptions<Selection>,
   ) {
     this.client = options.client;
-    this.kind = definition.kind;
+    this.kind = descriptor.kind;
     this.binding = options.binding ?? selectConnectionBinding(this.client.getSnapshot());
-    const selection = this.normalize(Object.hasOwn(options, 'selection') ? options.selection as Selection | null : definition.options);
+    const selection = this.normalize(options.selection);
     this.commandsValue = this.createCommands(selection, options.commandScope);
     this.view = new SelectedRecords({
       selection,
@@ -64,7 +61,7 @@ export class EnboxRecordOwner<T, Selection, Kind extends RecordKind> {
             ...(query.within === undefined ? {} : { within: query.within }),
             filter: recordId === undefined ? {} : { recordId }, pagination: { limit: 1 }, materialize: true as const, signal,
           };
-        return enbox.using(definition.protocol).records.observe(definition.path, request) as Promise<RecordView<TypedMaterializedRecord<T>>>;
+        return enbox.using(descriptor.protocol).records.observe(descriptor.path, request) as Promise<RecordView<TypedMaterializedRecord<T>>>;
       },
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       loadAll: options.loadAll === true,
@@ -136,13 +133,13 @@ export class EnboxRecordOwner<T, Selection, Kind extends RecordKind> {
     const hasRecordId = value !== null && Object.hasOwn(value as object, 'recordId');
     const selection = copyRecordOptions(value as object | null) as LocalRecordSelection | null;
     if (this.kind === 'singleton' && hasRecordId) throw new TypeError('A singleton selection does not accept recordId.');
-    assertRecordSelection(this.definition as AnyRecordDefinition, selection);
+    assertRecordSelection(this.descriptor, selection);
     return selection;
   }
 
   private createCommands(selection: LocalRecordSelection | null, scope?: object): AnyRecordCommands<T> {
     const token = this.commandToken = {};
-    return createRecordCommands<T>(this.definition as AnyRecordDefinition, selection, this.binding,
+    return createRecordCommands<T>(this.descriptor, selection, this.binding,
       () => this.commandToken === token && this.isCurrent(), scope);
   }
 
@@ -184,7 +181,7 @@ export class EnboxRecordOwner<T, Selection, Kind extends RecordKind> {
 
 export function isEnboxRecordStore(value: unknown): value is EnboxRecordOwner<unknown, unknown, RecordKind> {
   return value !== null && typeof value === 'object'
-    && 'definition' in value && 'client' in value && 'kind' in value
+    && 'client' in value && 'kind' in value && 'commands' in value
     && 'getSnapshot' in value && typeof value.getSnapshot === 'function'
     && 'subscribe' in value && typeof value.subscribe === 'function';
 }

@@ -12,7 +12,7 @@ import type {
 import { useCallback, useMemo } from 'react';
 import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
 
-import { useEnboxClient } from '../internal/provider-context.js';
+import { useEnboxClient } from '../provider.js';
 
 const SERVER_CONNECTION: ConnectionSnapshot = Object.freeze({ phase: 'initializing' });
 const getServerSnapshot = (): ConnectionSnapshot => SERVER_CONNECTION;

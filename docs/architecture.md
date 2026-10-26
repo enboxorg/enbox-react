@@ -241,40 +241,29 @@ unsaved edits.
 
 ## Local record commands
 
-The reference architecture has three layers: a pure `defineRecordStore`
-definition, one session-bound owner, and React bindings to that owner.
-Definitions co-locate protocol, path, selection defaults, and collection/record/
-singleton kind. They perform no I/O. `createRecordStore(definition, { client })`
-captures the current facade/session; create explicit owners after connection
-and replace them with their workspace/session.
+`useEnboxRecords` and `useEnboxRecord` accept the protocol, path, and query
+arguments directly. Selection IDs belong to application state or routing.
+A parameterized hook owns its view; no definition registration or globally
+selected-record slot is required.
 
-`EnboxProvider`'s `records` prop registers definitions or supplied owners.
-`EnboxRecordsProvider` supplies the same registration for narrower scopes or
-externally owned resources. Definitions create lazy owners for the current
-binding; supplied owners remain caller-owned. Multiple consumers resolve the
-same definition to the same owner. No global query cache or identity registry
-is involved. Provider-created views stop with their last consumer and can
-resume; explicit owners retain activated views until close/abort/retirement.
-Nested scopes inherit unrelated definitions and can shadow a local owner;
-definition lookup never crosses a different connection-client boundary.
+Both hooks bind the same internal typed record owner used by imperative
+controllers. `createRecordsStore({ client, protocol, path, options })` owns a
+collection; `createRecordStore` with the same configuration owns one record by
+ID or a protocol-declared singleton. The hooks can borrow these explicit owners
+without a provider, additional view, or separate write implementation.
 
-Owners use `SelectedRecords` and `RecordViewObserver` for opening, readiness,
-pagination, cancellation, and teardown. Only snapshot projection is cached at
-the typed boundary. Collections expose materialized `id`, `contextId`, `data`,
-and native `record`; one-record views expose `data`, `record`, and `isMissing`.
-Role paths and remote/role query options stay on the native view adapters.
-
-`store.commands` performs typed native CRUD with no React dependency.
-`useEnboxRecords` and `useEnboxRecord` add the existing mutation observer's
-caller-scoped progress, errors, and UI guard. They do not open a second view
-when borrowing an owner. The protocol/path shorthand uses the same owner and
-commands, while retaining its independent selection semantics.
-
-`selection` is immutable; `select()` owns changes to the read specification.
-Factory selection overrides bind definitions to runtime contexts before reads
-start. Collection `updateRecords` remains display-only and is replaced by the
-next native publication; it does not persist or retry writes. Native delete
-pruning is available through controller commands for domain cleanup workflows.
+The owner composes `SelectedRecords` and `RecordViewObserver` for native view
+lifetime, query changes, readiness, pagination, and teardown. It captures one
+facade/session; construction is inert, replacement masks private data, and
+retired commands cannot target a new session. Explicit owners retain activated
+views until close/abort/retirement. Hook-owned views release with their binding.
+Controller commands return native Promises; React adds the existing mutation
+observer's per-binding progress, errors, and completion guard. Collection
+`updateRecords` remains display-only. Query selections are copied and frozen.
+No additional data cache or state-library dependency is introduced. Collections
+materialize payloads; one-record views use a bounded native selection. Role paths and remote/role
+query options are excluded from these convenience APIs; lower-level hooks
+retain those native capabilities.
 
 Command identity includes protocol, path, parent context, selection mode,
 explicit record ID, and active selection. Query filters, pagination, and read enablement do not
@@ -308,8 +297,8 @@ owns remote field settlement, retries, and image resources. Local singleton
 selection adds no second profile-reader implementation.
 
 Context hooks return the owner's snapshot and retry control directly, preserving
-owner metadata and captured-selection semantics. Domain hooks bind registered
-owners. Selectors read those stores without
+owner metadata and captured-selection semantics. Domain hooks share logic;
+shared views use explicit owner stores. Selectors read those stores without
 another native observer. CI builds declarations once in `check`; consumer
 scripts use those same outputs. Standalone public consumer commands still build
 before packing.
@@ -322,12 +311,13 @@ snapshot field in both the runtime result and its type.
 
 ## Application and test boundaries
 
-The starter registers record definitions at application startup and keeps its
-domain hooks as bindings. Parent and selected-record state comes from store
-selection, so controllers and components observe the same criteria.
+The starter uses `useTasks(projectContextId)` for a collection and
+`useTask(projectContextId, taskId)` for one ordinary record. A detail lookup is
+independent of the list's loaded page and filters. Singleton cardinality comes
+from the protocol. Domain hooks require no separate resource definitions.
 
-This package owns generic view/mutation lifetimes, snapshot identity, stale
-controls, retirement privacy, and React 18/19 behavior. Dapps keep protocol and
+This package tests generic ownership, query projection, stale controls,
+mutation presentation, and React lifecycle behavior. Dapps keep protocol and
 permission policy, domain operations, rendering, and editor/recovery semantics.
-When a migration delegates generic behavior here, delete its app-side unit tests;
-retain focused integration checks for the application's definition/owner wiring.
+When a migration delegates generic behavior here, remove its duplicate app-side
+tests and retain focused integration checks for the application's wiring.

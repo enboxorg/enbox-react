@@ -1,14 +1,16 @@
 import { useEnboxRecord, useEnboxRecords } from '@enbox/react';
-import { projects, selectedTask, tasks } from './records.js';
+import { DateSort } from '@enbox/react/config';
+
+import { TaskBoardProtocol } from './protocol.js';
 
 export function useProjects() {
-  return useEnboxRecords(projects);
+  return useEnboxRecords(TaskBoardProtocol, 'project', { dateSort: DateSort.CreatedDescending });
 }
 
-export function useTasks() {
-  return useEnboxRecords(tasks);
+export function useTasks(within: string) {
+  return useEnboxRecords(TaskBoardProtocol, 'project/task', { within });
 }
 
-export function useTask() {
-  return useEnboxRecord(selectedTask);
+export function useTask(within: string, recordId: string) {
+  return useEnboxRecord(TaskBoardProtocol, 'project/task', { within, recordId });
 }

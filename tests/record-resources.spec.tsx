@@ -1,20 +1,43 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { createRecordStore, defineRecordStore } from '../src/config/index.js';
-import { EnboxBindingChangedError, EnboxProvider, EnboxRecordsProvider, useEnboxRecord, useEnboxRecords } from '../src/index.js';
+import { createRecordStore, createRecordsStore } from '../src/config/index.js';
+import { EnboxBindingChangedError, useEnboxRecord, useEnboxRecords } from '../src/index.js';
 import { connected, ControlledView, facade } from './helpers.js';
 import { protocol, setup, type Note } from './record-fixture.js';
 
-const spaces = defineRecordStore({ protocol, path: 'space' });
-const notes = defineRecordStore({ protocol, path: 'space/note', options: null });
-const oneNote = defineRecordStore({ protocol, path: 'space/note', kind: 'record', options: null });
-const choice = defineRecordStore({ protocol, path: 'choice', kind: 'singleton' });
-
 describe('shared record resources', () => {
+  it('keeps parameterized detail views independent when one selected ID changes', async () => {
+    const { api, wrapper } = setup();
+    api.observe.mockImplementation(async (_path, options) => {
+      const { within, filter: { recordId } } = options as { within: string; filter: { recordId: string } };
+      return new ControlledView<{ record: { id: string; contextId: string }; value: Note }>([
+        { record: { id: recordId, contextId: `${within}/${recordId}` }, value: { text: recordId, done: false } },
+      ]);
+    });
+    const first = renderHook(({ id }) => useEnboxRecord(protocol, 'space/note', { within: 'first', recordId: id }), {
+      wrapper, initialProps: { id: 'a' },
+    });
+    const second = renderHook(() => useEnboxRecord(protocol, 'space/note', { within: 'first', recordId: 'b' }), { wrapper });
+    try {
+      await waitFor(() => expect(first.result.current.data?.text).toBe('a'));
+      await waitFor(() => expect(second.result.current.data?.text).toBe('b'));
+      const previous = first.result.current.patch;
+      const unchanged = second.result.current.patch;
+      first.rerender({ id: 'c' });
+      await waitFor(() => expect(first.result.current.data?.text).toBe('c'));
+      expect(second.result.current.data?.text).toBe('b');
+      expect(previous.isCurrent()).toBe(false);
+      expect(unchanged.isCurrent()).toBe(true);
+      await act(async () => { await second.result.current.patch.mutateAsync({ done: true }); });
+      expect(api.patch).toHaveBeenCalledWith('space/note', 'b', { done: true });
+      expect(api.observe).toHaveBeenCalledTimes(3);
+    } finally { first.unmount(); second.unmount(); }
+  });
+
   it('constructs inert owners and supports headless commands without opening a view', async () => {
     const { api, client, listeners } = setup();
-    const store = createRecordStore(spaces, { client });
+    const store = createRecordsStore({ client, protocol, path: 'space' });
     expect(api.observe).not.toHaveBeenCalled();
     expect(listeners.size).toBe(0);
     await store.commands.create({ name: 'Work' });
@@ -28,7 +51,7 @@ describe('shared record resources', () => {
 
   it('shares one native view between a headless owner and two provider-free React bindings', async () => {
     const { api, view, client } = setup<{ name: string }>();
-    const store = createRecordStore(spaces, { client });
+    const store = createRecordsStore({ client, protocol, path: 'space' });
     const first = renderHook(() => useEnboxRecords(store));
     const second = renderHook(() => useEnboxRecords(store));
     try {
@@ -52,97 +75,10 @@ describe('shared record resources', () => {
     expect(view.close).toHaveBeenCalledOnce();
   });
 
-  it('registers one owner per definition and releases provider-owned views on unmount', async () => {
-    const { api, view, wrapper } = setup<{ name: string }>();
-    const sources = { spaces };
-    const hook = renderHook(() => ({ first: useEnboxRecords(spaces), second: useEnboxRecords(spaces) }), {
-      wrapper: ({ children }) => wrapper({ children: <EnboxRecordsProvider records={sources}>{children}</EnboxRecordsProvider> }),
-    });
-    await waitFor(() => expect(hook.result.current.first.isReady).toBe(true));
-    expect(hook.result.current.first.store).toBe(hook.result.current.second.store);
-    expect(api.observe).toHaveBeenCalledOnce();
-    hook.unmount();
-    expect(view.close).toHaveBeenCalledOnce();
-  });
-
-  it('borrows supplied controller owners through the main provider without closing them', async () => {
-    const { api, view, client } = setup<{ name: string }>();
-    const store = createRecordStore(spaces, { client });
-    await store.ready();
-    const records = { spaces: store };
-    const hook = renderHook(() => useEnboxRecords(spaces), {
-      wrapper: ({ children }) => <EnboxProvider client={client} records={records}>{children}</EnboxProvider>,
-    });
-    expect(hook.result.current.store).toBe(store);
-    expect(api.observe).toHaveBeenCalledOnce();
-    hook.unmount();
-    expect(view.close).not.toHaveBeenCalled();
-    await store.commands.create({ name: 'Controller still owns it' });
-    await store.close();
-    expect(view.close).toHaveBeenCalledOnce();
-  });
-
-  it('keeps registered definitions lazy until a consumer observes them', () => {
-    const { client, api } = setup();
-    const records = { spaces };
-    const hook = renderHook(() => null, {
-      wrapper: ({ children }) => <EnboxProvider client={client} records={records}>{children}</EnboxProvider>,
-    });
-    expect(api.observe).not.toHaveBeenCalled();
-    hook.unmount();
-  });
-
-  it('inherits unrelated definitions while a nested scope supplies its own owner', async () => {
-    const { client, api } = setup();
-    api.observe.mockImplementation(async () => new ControlledView<{ record: { id: string; contextId: string }; value: Note }>());
-    const local = createRecordStore(notes, { client, selection: { within: 'first' } });
-    const root = { spaces, notes };
-    const records = { notes: local };
-    const hook = renderHook(() => ({ spaces: useEnboxRecords(spaces), notes: useEnboxRecords(notes) }), {
-      wrapper: ({ children }) => <EnboxProvider client={client} records={root}>
-        <EnboxRecordsProvider records={records}>{children}</EnboxRecordsProvider>
-      </EnboxProvider>,
-    });
-    try {
-      await waitFor(() => expect(hook.result.current.notes.isReady).toBe(true));
-      expect(hook.result.current.spaces.store.definition).toBe(spaces);
-      expect(hook.result.current.notes.store).toBe(local);
-      expect(api.observe).toHaveBeenCalledTimes(2);
-    } finally { hook.unmount(); await local.close(); }
-  });
-
-  it('rejects accidentally mixing a registered owner with another provider client', async () => {
-    const first = setup();
-    const second = setup();
-    const owner = createRecordStore(spaces, { client: first.client });
-    const records = { owner };
-    try {
-      expect(() => renderHook(() => useEnboxRecords(spaces), {
-        wrapper: ({ children }) => <EnboxProvider client={second.client} records={records}>{children}</EnboxProvider>,
-      })).toThrow('surrounding EnboxProvider client');
-      expect(first.api.observe).not.toHaveBeenCalled();
-    } finally { await owner.close(); }
-  });
-
-  it('does not inherit a definition through a nested connection-client boundary', async () => {
-    const first = setup();
-    const second = setup();
-    const owner = createRecordStore(spaces, { client: first.client });
-    const records = { owner };
-    try {
-      expect(() => renderHook(() => useEnboxRecords(spaces), {
-        wrapper: ({ children }) => <EnboxRecordsProvider records={records}>
-          <EnboxProvider client={second.client}>{children}</EnboxProvider>
-        </EnboxRecordsProvider>,
-      })).toThrow('client boundaries');
-      expect(first.api.observe).not.toHaveBeenCalled();
-    } finally { await owner.close(); }
-  });
-
   it('retains command scope across filter changes and retires it when the parent changes', async () => {
     const { client, api } = setup();
     api.observe.mockImplementation(async () => new ControlledView<{ record: { id: string; contextId: string }; value: Note }>());
-    const store = createRecordStore(notes, { client });
+    const store = createRecordsStore({ client, protocol, path: 'space/note', options: null });
     const hook = renderHook(() => useEnboxRecords(store));
     try {
       expect(hook.result.current.status).toBe('idle');
@@ -166,8 +102,8 @@ describe('shared record resources', () => {
 
   it('binds record and singleton stores through the same native command implementation', async () => {
     const { client, api } = setup();
-    const record = createRecordStore(oneNote, { client });
-    const singleton = createRecordStore(choice, { client });
+    const record = createRecordStore({ client, protocol, path: 'space/note', options: null });
+    const singleton = createRecordStore({ client, protocol, path: 'choice' });
     const one = renderHook(() => useEnboxRecord(record));
     const slot = renderHook(() => useEnboxRecord(singleton));
     try {
@@ -185,7 +121,7 @@ describe('shared record resources', () => {
   it('rejects readiness if selection changes between native settlement and projection', async () => {
     const { client, api } = setup();
     api.observe.mockImplementation(async () => new ControlledView<{ record: { id: string; contextId: string }; value: Note }>());
-    const store = createRecordStore(notes, { client });
+    const store = createRecordsStore({ client, protocol, path: 'space/note', options: null });
     try {
       await store.select({ within: 'first' });
       const pending = store.ready();
@@ -197,7 +133,7 @@ describe('shared record resources', () => {
   it('owns immutable selections and leaves display-only updates to the next native publication', async () => {
     const { client, view, api } = setup();
     const request = { within: 'first', filter: { recordId: 'selected' } };
-    const store = createRecordStore(notes, { client, selection: request });
+    const store = createRecordsStore({ client, protocol, path: 'space/note', options: request });
     try {
       request.within = 'other';
       request.filter.recordId = 'changed';
@@ -217,7 +153,7 @@ describe('shared record resources', () => {
 
   it.each(['replace', 'abort', 'close'] as const)('masks rows and retires commands immediately on %s', async (retirement) => {
     const { client, publish, api, view, lifetime } = setup<{ name: string }>();
-    const store = createRecordStore(spaces, { client });
+    const store = createRecordsStore({ client, protocol, path: 'space' });
     await store.ready();
     view.publish({ status: 'ready', current: true, hasMore: false, records: [
       { record: { id: 'space', contextId: 'space' }, value: { name: 'Private' } },
