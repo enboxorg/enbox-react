@@ -12,6 +12,8 @@ either retires the scope; sync-status changes keep the same feature instances.
 `EnboxProvider application={runtime}` borrows that owner; `useFeature` resolves
 its current feature instance, and `useStore` subscribes to resource or command
 snapshots. React never creates a second query cache or command engine.
+Connection state and actions stay on `runtime.connection`; the runtime's own
+subscription invalidates feature lookups when their session scope may change.
 
 A **snapshot** is the cached immutable value returned by `getSnapshot`, not a
 copy created on every read. **State** names the value's domain shape:

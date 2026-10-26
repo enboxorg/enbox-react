@@ -1,4 +1,4 @@
-import type { ApplicationRuntime, ConnectionSnapshot, StoreDefinition, StoreInstance } from '@enbox/api';
+import type { ApplicationRuntime, StoreDefinition, StoreInstance } from '@enbox/api';
 
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,14 +11,12 @@ const definition = {} as StoreDefinition<Readonly<{ name: string }>>;
 /** Model the application subscription boundary independently of SDK internals. */
 function controlledApplication() {
   const { client } = controlledClient(connected());
-  const listeners = new Set<(snapshot: ConnectionSnapshot) => void>();
+  const listeners = new Set<() => void>();
   let feature = { name: 'first' };
   const application: ApplicationRuntime = {
     connection: client,
     store: <Definition extends StoreDefinition>(_definition: Definition): StoreInstance<Definition> =>
       feature as StoreInstance<Definition>,
-    getSnapshot: () => client.getSnapshot(),
-    getServerSnapshot: () => ({ phase: 'initializing' }),
     subscribe: (notify) => {
       listeners.add(notify);
       return () => { listeners.delete(notify); };
@@ -31,9 +29,9 @@ function controlledApplication() {
     listeners,
     replace(next = { name: 'replacement' }) {
       feature = next;
-      for (const notify of listeners) notify(client.getSnapshot());
+      for (const notify of listeners) notify();
     },
-    notify() { for (const notify of listeners) notify(client.getSnapshot()); },
+    notify() { for (const notify of listeners) notify(); },
   };
 }
 
