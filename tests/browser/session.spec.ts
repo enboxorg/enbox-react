@@ -84,16 +84,20 @@ test('keeps the app usable without a published profile and allows failed operati
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-test('distinguishes a failed task lookup from a confirmed missing task', async ({ page }) => {
-  await page.goto(`${fixture}?seed&detail-read-error`);
+test('shares the list observation with task details and reflects a live removal', async ({ page }) => {
+  await page.goto(`${fixture}?seed`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
   await page.getByRole('button', { name: 'First project', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Complete First task', exact: true })).toBeVisible();
+  const taskObservationCount = () => page.evaluate(() => {
+    const controls = window as unknown as { __starterFixture: { taskObservationCount(): number } };
+    return controls.__starterFixture.taskObservationCount();
+  });
+  expect(await taskObservationCount()).toBe(1);
   await page.getByRole('button', { name: 'Open task First task', exact: true }).click();
   const details = page.getByRole('region', { name: 'Task details', exact: true });
-  await expect(details.getByRole('alert')).toContainText('Couldn’t load the task.');
-  await expect(details.getByText('This task is no longer available.', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Retry task', exact: true }).click();
   await expect(details).toContainText('First task · To do');
+  expect(await taskObservationCount()).toBe(1);
   await expect(details.getByRole('alert')).toHaveCount(0);
   await page.evaluate(() => {
     const controls = window as unknown as { __starterFixture: { removeTasks(): void } };

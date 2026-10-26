@@ -1,6 +1,6 @@
-import { defineProtocol, recordCodecs } from '@enbox/react/config';
+import { defineProtocol, recordCodecs } from '@enbox/browser';
 
-import app from '../app.json' with { type: 'json' };
+import app from '../../app.json' with { type: 'json' };
 
 export type Project = { name: string };
 export type Task = { title: string; completed: boolean };

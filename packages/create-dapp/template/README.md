@@ -40,9 +40,31 @@ accepting dependency or security fixes.
 
 `src/app.json` contains the display name used in the page, browser title, and
 wallet approval screen, plus a stable app ID. Changing the display name leaves
-the app ID and demo data namespace intact. `src/application.ts` defines the application manifest
-and wallet configuration. `src/main.tsx` mounts the SDK provider; `src/App.tsx`
-contains the app shell without owning authentication state.
+the app ID and task-board data namespace intact.
+
+The application follows the same feature-store structure as notesd:
+
+```text
+src/
+  app/
+    application.ts      # feature registration and wallet identity
+    runtime.ts          # one browser-lifetime application owner
+    App.tsx             # connection shell and feature composition
+  features/tasks/
+    protocol.ts         # typed encrypted records and validation
+    store.ts            # shared resources, commands, and domain defaults
+    components/         # task board and its styles
+  shared/components/
+    ProfileCard.tsx
+  main.tsx
+  sw.ts
+```
+
+`defineApplication` derives the protocol manifest from registered stores.
+`getApplication()` creates one headless runtime over a native connection.
+`main.tsx` waits for worker control before passing that runtime to
+`EnboxProvider application={...}`. The provider initializes the borrowed runtime;
+the application owns its lifetime. Development module replacement disposes it.
 
 The profile card reads published profile information through `useProfile`.
 Names, images, settlement state, and image URL lifetimes belong to the SDK.
@@ -50,27 +72,45 @@ Missing profiles and unavailable images have local display fallbacks.
 The wallet's profile label is used when a public display name is unavailable;
 the expanded details still show which name is publicly published.
 
-The removable demo lives entirely in `src/demo`:
+The replaceable task feature lives in `src/features/tasks`:
 
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
-- `use-task-board.ts` defines `useProjects`, `useTasks`, and `useTask` with
-  `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
-  parent context ID; task details also select an exact record ID.
-- `TaskBoard.tsx` renders the board and calls typed create, patch, and delete commands.
-  Simple event handlers use `mutate`. Forms await `mutateAsync` and check
-  `isCurrent()` before clearing drafts or closing details. Native observation updates the displayed data.
-- `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
+- `store.ts` declares one shared project collection and a task collection scoped
+  with `tasks.within(projectContextId)`. Creation and rename defaults live here.
+  Native resource commands share pending/error state across consumers.
+- `components/TaskBoard.tsx` resolves the feature with `useFeature(TaskBoardStore)`
+  and reads resources or commands with `useStore`. Task details select a row from
+  the list's existing resource. Input drafts and UI selection remain in React.
+  Awaited handlers check command authorization before applying their UI result.
+- `components/tasks.css` styles the task feature. Shared app and profile styles
+  live in `src/style.css`.
 
-To replace the demo, register your own typed application protocol in
-`application.ts` in place of `TaskBoardProtocol`. Then delete `src/demo` and remove
-the `TaskBoard` import and component from `App.tsx`. Enbox requires at least one
-application protocol, so keep your replacement registered. The profile card,
-connection shell, and service worker remain the base for your app.
+Application controllers use the same store instance as React:
+
+```ts
+const board = getApplication().store(TaskBoardStore);
+const release = board.projects.retain();
+try {
+  const state = await board.projects.ready();
+  // Use state.records in a controller or indexer.
+} finally {
+  release();
+}
+```
+
+Handles belong to their authorization session. Resolve a fresh feature when
+that session changes. React's `useFeature` handles that replacement automatically.
+
+To replace the task feature, register your own store in `app/application.ts`,
+delete `src/features/tasks`, and change the feature rendered by `app/App.tsx`.
+Enbox requires at least one application protocol, so keep your replacement
+registered. The profile card, connection shell, and service worker remain the
+base for your app.
 
 The demo's default protocol URI is
 `https://example.com/<encoded app ID>/demo/v2`. Replace the URI expression in
-`src/demo/protocol.ts` with a stable URI
+`src/features/tasks/protocol.ts` with a stable URI
 you control before publishing. This URI identifies saved records and wallet
 grants: changing it creates a different data namespace. Once deployed, keep
 that identifier fixed when changing the app's display name.

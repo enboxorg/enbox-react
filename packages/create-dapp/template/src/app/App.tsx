@@ -1,9 +1,9 @@
 import { useEnboxConnection } from '@enbox/react';
 import { useEffect } from 'react';
 
-import app from './app.json' with { type: 'json' };
-import { TaskBoard } from './demo/TaskBoard.js';
-import { ProfileCard } from './ProfileCard.js';
+import app from '../app.json' with { type: 'json' };
+import { TaskBoard } from '../features/tasks/components/TaskBoard.js';
+import { ProfileCard } from '../shared/components/ProfileCard.js';
 
 export function App() {
   const connection = useEnboxConnection();

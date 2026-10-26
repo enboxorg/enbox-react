@@ -4,6 +4,29 @@
 React. Authentication, protocol installation, encryption, persistence, and
 replication run in `@enbox/browser`.
 
+The default application pattern uses `defineStore`, `defineApplication`, and
+`createApplication` from the platform-neutral API (also re-exported by browser).
+The runtime owns generation-bound feature instances and native collection views.
+`EnboxProvider application={runtime}` borrows that owner; `useFeature` resolves
+its current feature instance, and `useStore` subscribes to resource or command
+snapshots. React never creates a second query cache or command engine.
+
+Store definitions declare static protocol and feature dependencies. Equivalent
+queries within a feature share native observations; parent scopes remain
+independently addressable. Local collection writes refresh canonical native
+views before completing, without application-maintained row overlays. Query
+failures remain query state and do not turn committed writes into failed writes.
+
+The supplied application owns terminal connection disposal. The provider calls
+its initialization by default and retains no ownership after unmount. Store
+subscriptions acquire resource leases only after commit and release them on
+cleanup. `useFeature` observes feature identity directly, so a session abort can
+replace a feature before the native connection publishes another snapshot.
+
+This first store integration covers owned metadata collections. Document repair,
+sharing workflows, and their host drain policies continue to use native and
+existing advanced bindings while their resource adapters are extracted.
+
 ## Package entrypoints
 
 | Entrypoint | Contents |

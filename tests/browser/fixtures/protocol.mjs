@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createEnboxTestContext } from '@enbox/api/testing';
-import { defineApplicationManifest } from '@enbox/react/config';
+import { defineApplicationManifest } from '@enbox/browser';
 
 import app from '../src/app.json' with { type: 'json' };
-import { TaskBoardProtocol } from '../src/demo/protocol.ts';
+import { TaskBoardProtocol } from '../src/features/tasks/protocol.ts';
 
 assert.notEqual(app.id, app.name, 'The consumer must exercise distinct stable ID and display name.');
 assert.equal(TaskBoardProtocol.definition.protocol, `https://example.com/${encodeURIComponent(app.id)}/demo/v2`);

@@ -1,7 +1,8 @@
 import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
 
-import { AgentSession } from '@enbox/browser';
 import { onTestFinished, vi } from 'vitest';
+
+type AgentSession = NonNullable<ConnectionSnapshot['session']>;
 
 /** Release manually subscribed observers even when an assertion fails. */
 export function subscribeObserver(
@@ -45,12 +46,12 @@ export function controlledClient(initial: ConnectionSnapshot = { phase: 'disconn
 export function connected(
   enbox: Enbox = facade(), did = 'did:example:alice', lifetime = new AbortController(),
 ): Extract<ConnectionSnapshot, { phase: 'connected' }> {
-  const session = new AgentSession({
+  const session: AgentSession = {
     agent: {} as AgentSession['agent'],
     did,
     signal: lifetime.signal,
     identity: { didUri: did, name: did },
-  });
+  };
   return { phase: 'connected', enbox, session };
 }
 
@@ -87,6 +88,10 @@ export class ControlledView<T> implements ExpandableRecordView<T> {
   public async ready(): Promise<Extract<RecordViewState<T>, { status: 'ready' }>> {
     if (this._state.status !== 'ready') throw new Error('Test view is not ready.');
     return this._state;
+  }
+
+  public async refresh(): Promise<Extract<RecordViewState<T>, { status: 'ready' }>> {
+    return this.ready();
   }
 
   public publish(next: RecordViewState<T>): void {

@@ -25,7 +25,7 @@ test('the built package imports without browser globals and leaves client startu
   const react = await import('@enbox/react');
   const config = await import('@enbox/react/config');
   for (const name of [
-    'EnboxProvider', 'useEnboxClient', 'useConnection', 'useConnectionActions',
+    'EnboxProvider', 'useApplication', 'useFeature', 'useStore', 'useEnboxClient', 'useConnection', 'useConnectionActions',
     'useEnbox', 'useIdentity', 'useSyncStatus', 'useProtocol',
     'useEnboxRecords', 'useEnboxRecord', 'useRecords', 'useRecordView', 'useObservableStore', 'useEnboxMutation',
     'useEnboxConnection', 'useProfile', 'useProfiles', 'useContextView',
