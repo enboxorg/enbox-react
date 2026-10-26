@@ -1,38 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { defineProtocol, recordCodecs } from '../src/config/index.js';
-import { EnboxBindingChangedError, EnboxProvider, useEnboxRecord, useEnboxRecords } from '../src/index.js';
-import { connected, ControlledView, controlledClient, deferred, facade } from './helpers.js';
-
-const protocol = defineProtocol({
-  protocol: 'https://example.test/scoped-records', published: false,
-  types: { space: { dataFormats: ['application/json'] }, note: { dataFormats: ['application/json'] }, choice: { dataFormats: ['application/json'] } },
-  structure: { choice: { $recordLimit: { max: 1 } }, space: { note: { choice: { $recordLimit: { max: 1 } } }, choice: { $recordLimit: { max: 1 } } } },
-} as const, {
-  space: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<{ text: string; done: boolean }>(),
-  choice: recordCodecs.json<{ emoji: string }>(),
-});
-
-type Note = { text: string; done: boolean };
-function setup<T = Note>() {
-  const view = new ControlledView<{ record: { id: string; contextId: string }; value: T }>();
-  const api = {
-    observe: vi.fn(async (_path: string, _options: unknown) => view),
-    query: vi.fn(async (_path: string, _options: unknown): Promise<{ records: { id: string; contextId: string }[] }> => ({ records: [] })),
-    create: vi.fn(async (_path: string, _request: unknown) => ({ id: 'created', contextId: 'first/created' })),
-    read: vi.fn(async (_path: string, request: string | { filter: object; within?: string }): Promise<{ id: string; contextId: string } | undefined> => {
-      const id = typeof request === 'string' ? request : 'singleton';
-      return { id, contextId: `first/${id}` };
-    }),
-    patch: vi.fn(async (_path: string, id: string, _patch: unknown) => ({ id })),
-    delete: vi.fn(async (_path: string, _request: unknown) => {}),
-    set: vi.fn(async (_path: string, _request: unknown) => ({ id: 'singleton', contextId: 'first/singleton' })),
-  };
-  const control = controlledClient(connected(facade(vi.fn(() => ({ records: api })))));
-  const wrapper = ({ children }: { children: React.ReactNode }) => <EnboxProvider client={control.client}>{children}</EnboxProvider>;
-  return { ...control, view, api, wrapper };
-}
+import { EnboxBindingChangedError, useEnboxRecord, useEnboxRecords } from '../src/index.js';
+import { connected, deferred, facade } from './helpers.js';
+import { protocol, setup, type Note } from './record-fixture.js';
 
 describe('local record commands', () => {
   it('projects native rows and scopes CRUD without copying query filters into writes', async () => {

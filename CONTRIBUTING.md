@@ -34,6 +34,20 @@ in Enbox. This package owns React subscriptions, rendered connection bindings,
 view lifetimes, and presentation state. See [architecture](docs/architecture.md)
 for those contracts.
 
+The starter is the reference application architecture: protocol and record
+definitions live together, the provider registers session-scoped owners, and
+domain hooks bind those owners. Headless controllers use `createRecordStore`
+with the same definitions and native Promise commands. Keep generic ownership,
+query projection, command fencing, and mutation presentation in this package.
+Application code owns domain rules and rendering. Exercise a shared owner with
+both React and an imperative consumer before adding another app-side adapter.
+
+When moving generic behavior into this SDK, move its regression coverage here
+and remove duplicate dapp tests. Dapps keep schema/manifest policy, domain rules,
+UI behavior, and a small number of integration checks proving resource wiring.
+They should not reimplement or retest subscription cleanup, image leases,
+generic mutation progress, or stale session/selection guards already owned here.
+
 Use explicit domain names, preserve native public types, and keep public
 exports in the two entrypoint files. Prefix hooks with `use`. Distinguish a
 connection binding from a record context: the first identifies the current

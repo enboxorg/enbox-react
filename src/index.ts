@@ -31,11 +31,13 @@ export { useContextView } from './hooks/context-view.js';
 export type { IdleContextViewState, ContextViewOpener, ContextViewResult } from './hooks/context-view.js';
 export type { ContextStore, ContextStoreOptions } from './config/context-store.js';
 export { useRecords } from './hooks/records.js';
+export { EnboxRecordsProvider } from './records-provider.js';
+export type { EnboxRecordSources } from './records-provider.js';
 export type { RecordsOptions, RecordsResult } from './hooks/records.js';
 export { useEnboxRecord, useEnboxRecords } from './hooks/enbox-records.js';
 export type {
   EnboxRecordItem, EnboxRecordOptions, EnboxRecordResult, EnboxRecordsOptions, EnboxRecordsResult,
-  EnboxSingletonOptions, EnboxSingletonResult,
+  EnboxSingletonOptions, EnboxSingletonResult, EnboxRecordsBinding, EnboxRecordBinding, EnboxSingletonBinding,
 } from './hooks/enbox-records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
 export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';

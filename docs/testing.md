@@ -139,3 +139,18 @@ recreation, and active or paused observations.
 Close-completion regressions cover plain and selected owners closing reentrantly
 from native unsubscribe, abort, and view-close callbacks. Their promises remain
 pending until the already acquired native view finishes cleanup.
+
+Shared resource contracts use the same native record fixtures as the shorthand
+hooks. They prove that two React bindings and an imperative controller use one
+view, definitions and supplied stores follow their respective ownership rules,
+selection changes fence commands, and snapshot data is masked on retirement.
+Readiness projection also rejects a selection replaced after native settlement.
+SSR and Activity checks cover registered resources without duplicating the
+underlying observer's teardown matrix.
+
+The starter's native controller fixture imports the actual `records.ts`
+definitions. Bun executes that TypeScript source with its `.js` ESM specifiers;
+the isolated apps still build and run under npm and Bun, and the packed React 18
+consumer verifies Node imports and declarations. The controller fixture exercises
+real encrypted CRUD, parent fencing, record selection, and codec validation;
+Playwright checks the same application definitions through the React bindings.

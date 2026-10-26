@@ -54,19 +54,21 @@ version changes are documented in
 
 | Need | API |
 | --- | --- |
-| A local list with typed create, patch, and delete | `useEnboxRecords(protocol, path, options)` |
-| One record by ID, or a schema-declared singleton by path | `useEnboxRecord(protocol, path, options)` |
+| A shared local list with typed CRUD | `defineRecordStore` + `useEnboxRecords(definition)` |
+| A shared record or singleton | `defineRecordStore` with `kind: 'record'` or `'singleton'` + `useEnboxRecord(definition)` |
+| A controller-owned record resource | `createRecordStore(definition, { client, signal })` |
 | Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
 | A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
-| One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
+| An arbitrary native view shared by components and controllers | `createRecordStore(opener)` with `useRecords(store)` |
 | A selected slice of an existing store | `useObservableStore(store, fallback, selector)` |
 
-Domain hooks such as `useTasks(projectContextId)` fix paths and options in one
-module. Each call still owns its own view and mutation state. To share both,
-call the domain hook once in a parent and pass its result through props or
-context. For a view also used by headless controllers, create a store for the
-owning session/page, pass it through props or context, and close it or abort its
-owner signal when that scope ends. Give shared filters and pagination one owner.
+The primary pattern is a typed definition, one session-bound owner, and thin
+domain hooks. Register definitions with `EnboxProvider`'s `records` prop.
+Every component using a registered definition shares that owner's native view,
+selection, and commands. Controllers use the same owner through the binding's
+`store` property, or construct one explicitly and register it for React to borrow.
+Give selection and pagination one owner. Mutation presentation belongs to each
+React binding; pass a binding through props/context when a form needs shared progress.
 
 ## Define the application
 
@@ -74,13 +76,8 @@ owner signal when that scope ends. Give shared filters and pagination one owner.
 client factory. It has no React client directive.
 
 ```ts
-import type { CreateEnboxClientOptions } from '@enbox/react/config';
-
-import {
-  defineApplicationManifest,
-  defineProtocol,
-  recordCodecs,
-} from '@enbox/react/config';
+// protocol.ts
+import { defineProtocol, recordCodecs } from '@enbox/react/config';
 
 type Note = { title: string };
 
@@ -90,6 +87,16 @@ export const NotesProtocol = defineProtocol({
   types: { note: { dataFormats: ['application/json'], encryptionRequired: true } },
   structure: { note: {} },
 } as const, { note: recordCodecs.json<Note>() });
+```
+
+Compose application policy and resource registrations in `application.ts`:
+
+```ts
+import type { CreateEnboxClientOptions } from '@enbox/react/config';
+import { defineApplicationManifest } from '@enbox/react/config';
+import { NotesProtocol } from './protocol.js';
+export { NotesProtocol } from './protocol.js';
+export { records } from './records.js';
 
 export const config = {
   application: defineApplicationManifest({ protocols: [NotesProtocol] }),
@@ -249,14 +256,38 @@ visible while that read settles.
 
 ## Read and write records
 
-Define small domain hooks in an ordinary module:
+Define resources beside the protocol, once:
+
+```ts
+// records.ts
+import { defineRecordStore } from '@enbox/react/config';
+import { NotesProtocol } from './protocol.js';
+
+export const noteRecords = defineRecordStore({ protocol: NotesProtocol, path: 'note' });
+export const records = { notes: noteRecords };
+```
+
+Register the definitions at startup:
+
+```tsx
+<EnboxProvider config={config} records={records}>
+  <App />
+</EnboxProvider>
+```
+
+Defining or registering a resource performs no I/O. The first consumer starts
+its view; the last consumer releases provider-created views. A connection
+replacement creates new owners and immediately masks retired snapshots.
+The application manifest remains authoritative for requested protocol permissions.
+
+Keep domain hooks thin:
 
 ```tsx
 import { useEnboxRecords } from '@enbox/react';
-import { NotesProtocol } from './application.js';
+import { noteRecords } from './records.js';
 
 export function useNotes() {
-  return useEnboxRecords(NotesProtocol, 'note');
+  return useEnboxRecords(noteRecords);
 }
 
 export function Notes() {
@@ -270,6 +301,40 @@ export function Notes() {
   </>;
 }
 ```
+
+For imperative controllers, construct the same resource with the same definition:
+
+```tsx
+import { createRecordStore } from '@enbox/react/config';
+
+const notes = createRecordStore(noteRecords, { client, signal: workspaceLifetime.signal });
+await notes.commands.create({ title: 'Created by a controller' });
+const snapshot = await notes.ready();
+
+// UI hooks using noteRecords now borrow this exact owner.
+<EnboxRecordsProvider records={{ notes }}><Notes /></EnboxRecordsProvider>
+```
+
+`client` is the active native connection client, available through `useEnboxClient`.
+Registered stores must use that provider's client. Nested record scopes inherit
+unrelated definitions and can replace a definition with a scoped owner.
+Create explicit stores after connection; they capture that facade/session and
+do not retarget themselves to another identity. Explicit stores retain views
+until `close()`, owner abort, or session retirement;
+unmounting a borrowing component leaves its controller-owned view intact.
+`store.commands` exposes native Promises. React adds its existing pending/error
+presentation to those commands; it does not create another view or write pipeline.
+
+Use `selection` and `select()` to choose a parent or record. For example, a
+`project/task` definition can start with `options: null`, then receive
+`tasks.select({ within: projectContextId })`. A `kind: 'record'` resource also
+requires `recordId`; `kind: 'singleton'` requires `$recordLimit.max: 1` in the
+protocol. `selection` is immutable. Factory `selection` overrides bind a definition
+to runtime context without starting a read. Query-only changes preserve commands;
+changing the parent, record ID, or active selection permanently retires captured commands.
+
+The protocol/path forms below remain shorthand for independently owned selections
+and use the same store and native command implementation.
 
 `useEnboxRecords` materializes a local, session-owned collection with `create`,
 `patch`, and `delete` commands. Rows expose `id`, `contextId`, decoded `data`,
@@ -343,10 +408,11 @@ displayed data; these hooks add no optimistic overlay or write retry.
 The collection defaults to a page limit of 20; pass `pagination` to change it.
 `loadMore()` and `retry()` publish failures in query state. Their returned
 Promises still reject when awaited, and ignoring them in event handlers is safe.
-Each hook owns its view; use the shared-store APIs below when multiple consumers
-need to share one view. No global private-data cache or state-library dependency
-is introduced. The generated example's `use-task-board.ts` shows this module pattern
-for projects, child tasks, and a selected task’s detail panel.
+Registered definitions and supplied stores share one view across bindings.
+The protocol/path shorthand owns its selection independently. No global private-data
+cache or state-library dependency is introduced. The starter's `records.ts` and
+`use-task-board.ts` demonstrate the shared pattern for projects, child tasks,
+and a selected task’s detail panel.
 
 Use the lower-level `useRecords` and `useEnboxMutation` for remote or
 role-authorized operations, lazy file payloads, custom creates, and other
@@ -368,10 +434,11 @@ Pass `null` options or `enabled: false` to release a view and return idle.
 it can be false while useful saved data remains visible. The SDK drives live
 changes without a polling or cache-invalidation loop.
 
-## Share records with application controllers
+## Native view adapters
 
-When startup, search, or other controllers also read a catalog, create one
-store for that application scope:
+For custom native observers or query projections outside the typed resource
+API, the opener form of `createRecordStore` shares a read-only view with
+controllers:
 
 ```ts
 import { createRecordStore } from '@enbox/react/config';

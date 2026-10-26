@@ -3,6 +3,7 @@ import type { CreateEnboxClientOptions } from '@enbox/react/config';
 
 import app from './app.json' with { type: 'json' };
 import { TaskBoardProtocol } from './demo/protocol.js';
+export { taskBoardRecords as records } from './demo/records.js';
 
 export const config = {
   application: defineApplicationManifest({ protocols: [TaskBoardProtocol] }),

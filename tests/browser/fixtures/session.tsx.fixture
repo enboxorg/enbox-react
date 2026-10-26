@@ -5,6 +5,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/App.js';
+import { records } from '../src/application.js';
 import type { Project, Task } from '../src/demo/protocol.js';
 import '../src/style.css';
 
@@ -158,5 +159,5 @@ Object.assign(window, { __starterFixture: {
   addProjects: (count: number) => { for (let index = 0; index < count; index++) create('project', { name: `Remote project ${index}` }); },
 } });
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><EnboxProvider client={client}><App /></EnboxProvider></StrictMode>,
+  <StrictMode><EnboxProvider client={client} records={records}><App /></EnboxProvider></StrictMode>,
 );

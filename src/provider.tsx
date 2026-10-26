@@ -2,20 +2,19 @@
 
 import type { ConnectionStore } from '@enbox/browser';
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { createEnboxClient, getClientWalletOptions, type CreateEnboxClientOptions } from './config/client.js';
 import { ConnectionController, type ConnectionPolicy } from './internal/connection-controller.js';
+import { EnboxContext } from './internal/provider-context.js';
+import { EnboxRecordsProvider, type EnboxRecordSources } from './records-provider.js';
 
-type ProviderContext = ConnectionPolicy & Readonly<{
-  client: ConnectionStore;
-  controller: ConnectionController;
-}>;
-const EnboxContext = createContext<ProviderContext | undefined>(undefined);
+export { useProviderContext, useEnboxClient, useOptionalEnboxClient } from './internal/provider-context.js';
 
 type CommonProps = ConnectionPolicy & {
   children?: ReactNode;
   initializeOnMount?: boolean;
+  records?: EnboxRecordSources;
 };
 export type EnboxProviderProps = CommonProps & (
   | { client: ConnectionStore; config?: never }
@@ -77,7 +76,7 @@ function ConfiguredProvider({
   return <ConnectionContextProvider {...props} client={scope.client} />;
 }
 
-function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
+function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, children, records }: CommonProps & {
   client: ConnectionStore;
 }) {
   const [scope, setScope] = useState(() => ({
@@ -100,18 +99,7 @@ function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, ch
   }, [controller, scope]);
   const value = useMemo(() => ({ client, controller, beforeConnect, beforeDisconnect }),
     [client, controller, beforeConnect, beforeDisconnect]);
-  return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;
-}
-
-export function useProviderContext(): ProviderContext {
-  const context = useContext(EnboxContext);
-  if (context === undefined) throw new Error('Enbox hooks require an EnboxProvider.');
-  return context;
-}
-
-/** Returns the native client for advanced SDK actions. */
-export function useEnboxClient(): ConnectionStore { return useProviderContext().client; }
-
-export function useOptionalEnboxClient(): ConnectionStore | undefined {
-  return useContext(EnboxContext)?.client;
+  return <EnboxContext.Provider value={value}>
+    {records === undefined ? children : <EnboxRecordsProvider records={records}>{children}</EnboxRecordsProvider>}
+  </EnboxContext.Provider>;
 }

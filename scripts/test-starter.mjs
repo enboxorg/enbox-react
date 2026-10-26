@@ -97,7 +97,8 @@ try {
   execFileSync(process.execPath, [
     join(project, 'node_modules/typescript/bin/tsc'), '--noEmit', '--project', join(fixtures, 'tsconfig.fixture.json'),
   ], { cwd: project, env: environment, stdio: 'inherit' });
-  execFileSync(process.execPath, [join(fixtures, 'protocol.mjs')], {
+  // Execute the starter's TypeScript model directly, including its .js ESM specifiers.
+  execFileSync('bun', [join(fixtures, 'protocol.mjs')], {
     cwd: project, env: environment, stdio: 'inherit',
   });
   execFileSync(process.execPath, [

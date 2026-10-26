@@ -7,8 +7,42 @@ import { describe, expect, it, vi } from 'vitest';
 import { EnboxBindingChangedError, EnboxProvider, useContextView, useEnboxClient, useEnboxConnection, useEnboxMutation, useRecordView } from '../src/index.js';
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
 import { connected, controlledClient, ControlledView, deferred } from './helpers.js';
+import { protocol as recordProtocol, setup as recordSetup } from './record-fixture.js';
+import { defineRecordStore } from '../src/config/index.js';
+import { EnboxRecordsProvider, useEnboxRecords } from '../src/index.js';
 
 describe('React Activity', () => {
+  it('reopens registered record owners and keeps retired mutation guards obsolete', async () => {
+    const { client, api } = recordSetup<{ name: string }>();
+    const views: ControlledView<{ record: { id: string; contextId: string }; value: { name: string } }>[] = [];
+    api.observe.mockImplementation(async () => {
+      const view = new ControlledView<{ record: { id: string; contextId: string }; value: { name: string } }>();
+      views.push(view);
+      return view;
+    });
+    const spaces = defineRecordStore({ protocol: recordProtocol, path: 'space' });
+    const sources = { spaces };
+    const guards: (() => boolean)[] = [];
+    function Content() {
+      const state = useEnboxRecords(spaces);
+      guards.push(state.create.isCurrent);
+      return <output>{state.status}</output>;
+    }
+    const children = <EnboxRecordsProvider records={sources}><Content /></EnboxRecordsProvider>;
+    const element = (mode: 'visible' | 'hidden') => <EnboxProvider client={client}><Activity mode={mode}>{children}</Activity></EnboxProvider>;
+    const tree = render(element('visible'));
+    await waitFor(() => expect(tree.getByText('ready')).toBeDefined());
+    const captured = guards.at(-1)!;
+    tree.rerender(element('hidden'));
+    expect(views[0]!.close).toHaveBeenCalledOnce();
+    expect(captured()).toBe(false);
+    tree.rerender(element('visible'));
+    await waitFor(() => expect(views).toHaveLength(2));
+    await waitFor(() => expect(guards.at(-1)!()).toBe(true));
+    expect(captured()).toBe(false);
+    tree.unmount();
+    expect(views[1]!.close).toHaveBeenCalledOnce();
+  });
   it('gives resumed child Effects a fresh borrowed workflow even when children are unchanged', async () => {
     const { client } = controlledClient();
     const errors: unknown[] = [];

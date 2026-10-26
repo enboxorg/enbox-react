@@ -53,7 +53,7 @@ export function App() {
         {connection.isConnected && connection.did ? (
           <div className="connected-content">
             <ProfileCard enbox={connection.enbox} did={connection.did} identityName={connection.identityName} />
-            <TaskBoard disabled={busy || connection.walletRepair !== undefined} />
+            <TaskBoard key={connection.did} disabled={busy || connection.walletRepair !== undefined} />
           </div>
         ) : (
           <section className="panel connect-panel" aria-labelledby="connect-title">

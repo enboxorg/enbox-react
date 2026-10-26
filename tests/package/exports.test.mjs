@@ -25,7 +25,7 @@ test('the built package imports without browser globals and leaves client startu
   const react = await import('@enbox/react');
   const config = await import('@enbox/react/config');
   for (const name of [
-    'EnboxProvider', 'useEnboxClient', 'useConnection', 'useConnectionActions',
+    'EnboxProvider', 'EnboxRecordsProvider', 'useEnboxClient', 'useConnection', 'useConnectionActions',
     'useEnbox', 'useIdentity', 'useSyncStatus', 'useProtocol',
     'useEnboxRecords', 'useEnboxRecord', 'useRecords', 'useRecordView', 'useObservableStore', 'useEnboxMutation',
     'useEnboxConnection', 'useProfile', 'useProfiles', 'useContextView',
@@ -42,13 +42,17 @@ test('the built package imports without browser globals and leaves client startu
     application: config.defineApplicationManifest({ protocols: [protocol] }),
   });
   const records = config.createRecordStore(async () => { throw new Error('Construction must stay inert.'); });
+  const noteDefinition = config.defineRecordStore({ protocol, path: 'note' });
+  const typedRecords = config.createRecordStore(noteDefinition, { client });
   const contexts = config.createContextStore(async () => { throw new Error('Construction must stay inert.'); });
   try {
     assert.equal(client.getSnapshot().phase, 'initializing');
     assert.equal(records.getSnapshot().status, 'loading');
     assert.equal(contexts.getSnapshot().status, 'loading');
+    assert.equal(typedRecords.getSnapshot().status, 'idle');
   } finally {
     await contexts.close();
+    await typedRecords.close();
     await records.close();
     await client.dispose();
   }

@@ -1,0 +1,159 @@
+import type {
+  ConnectionStore, ContextRoleGroups, DataForPath, ProtocolDefinition, ProtocolPaths,
+  ProtocolRolePaths, RecordPatchInput, RecordQuery, TypedDeleteRequest, TypedProtocol, TypedRecord,
+} from '@enbox/browser';
+import type { RecordViewResult } from '../internal/record-view-observer.js';
+import type { SingletonPaths } from '../internal/singleton-paths.js';
+
+import { serializeQuery } from '../internal/serialize-query.js';
+
+export type RecordKind = 'collection' | 'record' | 'singleton';
+export type DataRecordPath<D extends ProtocolDefinition> = Exclude<ProtocolPaths<D>, ProtocolRolePaths<D>> & string;
+type RecordScope<Path extends string> = Path extends `${string}/${string}` ? { within: string } : { within?: never };
+type DefinitionOptions<Path extends string, Options> = Path extends `${string}/${string}`
+  ? { options: Options | null } : { options?: Options | null };
+
+export type EnboxRecordsOptions<D extends ProtocolDefinition, Path extends ProtocolPaths<D> & string> =
+  Omit<RecordQuery<D, Path>, 'within' | 'pagination' | 'from' | 'protocolRole'> & RecordScope<Path> & {
+    enabled?: boolean; pagination?: { limit: number }; from?: never; protocolRole?: never;
+  };
+export type EnboxRecordOptions<Path extends string> = RecordScope<Path> & {
+  recordId: string; enabled?: boolean; from?: never; protocolRole?: never;
+};
+export type EnboxSingletonOptions<Path extends string> = Omit<EnboxRecordOptions<Path>, 'recordId'> & { recordId?: never };
+
+const RECORD_DEFINITION = Symbol('Enbox record definition');
+declare const RECORD_DATA: unique symbol;
+
+/** A reusable selection definition. It owns no session, view, or subscription. */
+export type RecordDefinition<Data, Selection, Kind extends RecordKind = RecordKind> = Readonly<{
+  [RECORD_DEFINITION]: true;
+  [RECORD_DATA]?: Data;
+  protocol: TypedProtocol;
+  path: string;
+  kind: Kind;
+  options: Selection | null;
+}>;
+export type AnyRecordDefinition = RecordDefinition<unknown, unknown>;
+
+type DefinitionProtocol<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups, Path extends string> = {
+  protocol: TypedProtocol<D, C, R>; path: Path;
+};
+type TypedDefinition<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  Path extends string, Selection, Kind extends RecordKind,
+> = Omit<RecordDefinition<DataForPath<C, Path>, Selection, Kind>, 'protocol' | 'path'> & DefinitionProtocol<D, C, R, Path>;
+
+export function defineRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>,
+>(config: DefinitionProtocol<D, C, R, Path> & { kind?: 'collection' }
+  & DefinitionOptions<Path, EnboxRecordsOptions<D, NoInfer<Path>>>): TypedDefinition<D, C, R, Path, EnboxRecordsOptions<D, Path>, 'collection'>;
+export function defineRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>,
+>(config: DefinitionProtocol<D, C, R, Path> & { kind: 'record'; options: EnboxRecordOptions<NoInfer<Path>> | null }):
+  TypedDefinition<D, C, R, Path, EnboxRecordOptions<Path>, 'record'>;
+export function defineRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends SingletonPaths<D> & DataRecordPath<D>,
+>(config: DefinitionProtocol<D, C, R, Path> & { kind: 'singleton' }
+  & DefinitionOptions<Path, EnboxSingletonOptions<NoInfer<Path>>>): TypedDefinition<D, C, R, Path, EnboxSingletonOptions<Path>, 'singleton'>;
+export function defineRecordStore(config: {
+  protocol: TypedProtocol; path: string; kind?: RecordKind; options?: object | null;
+}): AnyRecordDefinition {
+  return createRecordDefinition(config);
+}
+
+/** Shared normalized descriptor for the typed API and its protocol/path shorthand. */
+export function createRecordDefinition(config: {
+  protocol: TypedProtocol; path: string; kind?: RecordKind; options?: object | null;
+}): AnyRecordDefinition {
+  if (config.kind !== undefined && !['collection', 'record', 'singleton'].includes(config.kind)) {
+    throw new TypeError('Record kind must be collection, record, or singleton.');
+  }
+  if (config.kind === 'singleton' && config.options != null && Object.hasOwn(config.options, 'recordId')) {
+    throw new TypeError('A singleton selection does not accept recordId.');
+  }
+  return Object.freeze({
+    [RECORD_DEFINITION]: true as const,
+    protocol: config.protocol, path: config.path, kind: config.kind ?? 'collection',
+    options: copyRecordOptions(config.options === undefined ? {} : config.options),
+  });
+}
+
+export function isRecordDefinition(value: unknown): value is AnyRecordDefinition {
+  return value !== null && typeof value === 'object' && RECORD_DEFINITION in value;
+}
+
+/** Own plain query data without evaluating accessors or accepting remote write scopes. */
+export function copyRecordOptions<Options extends object | null>(options: Options): Options {
+  if (options === null) return options;
+  if (typeof options !== 'object' || Array.isArray(options)) throw new TypeError('Record selections must use plain query objects.');
+  if (Object.hasOwn(options, 'from') || Object.hasOwn(options, 'protocolRole')) {
+    throw new TypeError('Enbox record mutations require the local session. Use useRecords for remote or role-authorized reads.');
+  }
+  return JSON.parse(serializeQuery(options), (_key: string, value: unknown): unknown =>
+    value !== null && typeof value === 'object' ? Object.freeze(value) : value) as Options;
+}
+
+export type EnboxRecordItem<T> = Readonly<{
+  id: string; contextId: string; data: Readonly<T>; record: TypedRecord<T>;
+}>;
+export type CommandScope = Readonly<{ scope: object; isCurrent(): boolean }>;
+export type RecordDeleteOptions = Pick<TypedDeleteRequest, 'prune'>;
+export type EnboxRecordsCommands<T> = CommandScope & Readonly<{
+  create(data: T): Promise<TypedRecord<T>>;
+  patch(variables: { id: string; patch: RecordPatchInput<T> }): Promise<TypedRecord<T>>;
+  delete(id: string, options?: RecordDeleteOptions): Promise<void>;
+}>;
+export type EnboxRecordCommands<T> = CommandScope & Readonly<{
+  patch(value: RecordPatchInput<T>): Promise<TypedRecord<T>>;
+  delete(options?: RecordDeleteOptions): Promise<void>;
+}>;
+export type EnboxSingletonCommands<T> = EnboxRecordCommands<T> & Readonly<{ set(data: T): Promise<TypedRecord<T>> }>;
+
+type CollectionState<T> = RecordViewResult<EnboxRecordItem<T>> & Readonly<{
+  isReady: boolean; isLoading: boolean; loadMore(): Promise<void>;
+}>;
+type SingleState<State, T> = State extends unknown ? Omit<State, 'records' | 'hasMore' | 'isLoadingMore'> & Readonly<{
+  data: Readonly<T> | undefined; record: TypedRecord<T> | undefined;
+  isReady: boolean; isLoading: boolean; isMissing: boolean;
+}> : never;
+export type EnboxRecordsSnapshot<T, Selection> = CollectionState<T> & Readonly<{
+  selection: Readonly<Selection> | null; commands: EnboxRecordsCommands<T>;
+}>;
+export type EnboxRecordSnapshot<T, Selection> = SingleState<RecordViewResult<EnboxRecordItem<T>>, T> & Readonly<{
+  selection: Readonly<Selection> | null; commands: EnboxRecordCommands<T>;
+}>;
+export type EnboxSingletonSnapshot<T, Selection> = SingleState<RecordViewResult<EnboxRecordItem<T>>, T> & Readonly<{
+  selection: Readonly<Selection> | null; commands: EnboxSingletonCommands<T>;
+}>;
+
+export type RecordSnapshotFor<T, Selection, Kind extends RecordKind> = Kind extends 'collection'
+  ? EnboxRecordsSnapshot<T, Selection> : Kind extends 'singleton'
+    ? EnboxSingletonSnapshot<T, Selection> : EnboxRecordSnapshot<T, Selection>;
+
+/** One session-bound read/write owner, usable by controllers and React bindings. */
+export type EnboxRecordStore<T, Selection, Kind extends RecordKind = RecordKind> = Readonly<{
+  definition: RecordDefinition<T, Selection, Kind>;
+  client: ConnectionStore;
+  kind: Kind;
+  commands: RecordSnapshotFor<T, Selection, Kind>['commands'];
+  getSnapshot(): RecordSnapshotFor<T, Selection, Kind>;
+  getServerSnapshot(): RecordSnapshotFor<T, Selection, Kind>;
+  subscribe(notify: () => void): () => void;
+  ready(options?: { signal?: AbortSignal }): Promise<Extract<RecordSnapshotFor<T, Selection, Kind>, { status: 'ready' }>>;
+  select(selection: Selection | null): Promise<void>;
+  retry(): Promise<void>;
+  close(): Promise<void>;
+}> & (Kind extends 'collection' ? Readonly<{
+  loadMore(): Promise<void>;
+  /** Display-only rows; the next native publication replaces them. */
+  updateRecords(update: (records: readonly EnboxRecordItem<T>[]) => readonly EnboxRecordItem<T>[]): void;
+}> : {});
+export type RecordStoreFor<Definition extends AnyRecordDefinition> = Definition extends RecordDefinition<infer T, infer Selection, infer Kind>
+  ? EnboxRecordStore<T, Selection, Kind> & Readonly<{ definition: Definition }> : never;
+export type RecordSelectionFor<Definition extends AnyRecordDefinition> = Definition extends RecordDefinition<unknown, infer Selection>
+  ? Selection : never;
+export type AnyEnboxRecordStore = EnboxRecordStore<unknown, unknown>;
