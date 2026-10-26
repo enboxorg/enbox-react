@@ -1,9 +1,15 @@
+import type { ConnectionStore, ContextRoleGroups, DataForPath, ProtocolDefinition, TypedProtocol } from '@enbox/browser';
+import type { DataRecordPath, EnboxRecordsOptions, EnboxRecordStore } from './record-types.js';
+import type { SingletonPaths } from '../internal/singleton-paths.js';
+import type { BoundRecordOptions } from '../internal/bound-record-store.js';
 import type { RecordViewOpener, RecordViewResult } from '../internal/record-view-observer.js';
+import { BoundRecordStore } from '../internal/bound-record-store.js';
 import { RecordViewObserver } from '../internal/record-view-observer.js';
 import type { SelectedRecordStoreConfig, SelectedRecordStore } from '../internal/selected-record-store.js';
 import { SelectedRecords } from '../internal/selected-record-store.js';
 
 export type { SelectedRecordStoreConfig, SelectedRecordStore, SelectedRecordSnapshot } from '../internal/selected-record-store.js';
+export type { EnboxRecordItem, EnboxRecordStore } from './record-types.js';
 
 /** One owned view shared by React consumers and application controllers. */
 export type RecordStore<Item> = Readonly<{
@@ -27,6 +33,20 @@ export type RecordStoreOptions = {
   loadAll?: boolean;
 };
 
+type BoundRecordConfig<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups, Path extends DataRecordPath<D>> =
+  RecordStoreOptions & { client: ConnectionStore; protocol: TypedProtocol<D, C, R>; path: Path; pageSize?: number }
+  & (Path extends `${string}/${string}` ? { options: EnboxRecordsOptions<D, NoInfer<Path>> | null }
+    : { options?: EnboxRecordsOptions<D, NoInfer<Path>> | null });
+
+/** A typed query owner; singleton commands follow the protocol's cardinality. */
+export function createRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends SingletonPaths<D> & DataRecordPath<D>,
+>(config: BoundRecordConfig<D, C, R, Path>): EnboxRecordStore<DataForPath<C, Path>, EnboxRecordsOptions<D, Path>, Path, true>;
+export function createRecordStore<
+  D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>,
+>(config: BoundRecordConfig<D, C, R, Path>): EnboxRecordStore<DataForPath<C, Path>, EnboxRecordsOptions<D, Path>, Path>;
 /** Subscription, ready(), or retry() opens the view until close() or abort. */
 export function createRecordStore<Item>(
   opener: RecordViewOpener<Item> | null,
@@ -37,11 +57,23 @@ export function createRecordStore<Item, Selection>(
   config: SelectedRecordStoreConfig<Item, Selection>,
 ): SelectedRecordStore<Item, Selection>;
 export function createRecordStore<Item, Selection>(
-  opener: RecordViewOpener<Item> | null | SelectedRecordStoreConfig<Item, Selection>,
+  opener: unknown,
   options: RecordStoreOptions = {},
-): RecordStore<Item> | SelectedRecordStore<Item, Selection> {
-  if (opener !== null && typeof opener === 'object') return new SelectedRecords(opener);
-  return new RecordViewObserver(opener, {
+): unknown {
+  if (opener !== null && typeof opener === 'object') {
+    if ('protocol' in opener) {
+      const config = opener as Omit<BoundRecordOptions, 'options'> & { options?: BoundRecordOptions['options'] };
+      return new BoundRecordStore({
+        client: config.client, protocol: config.protocol, path: config.path,
+        options: config.options === undefined ? {} : config.options,
+        ...(config.signal === undefined ? {} : { signal: config.signal }),
+        ...(config.loadAll === undefined ? {} : { loadAll: config.loadAll }),
+        ...(config.pageSize === undefined ? {} : { pageSize: config.pageSize }),
+      });
+    }
+    return new SelectedRecords(opener as SelectedRecordStoreConfig<Item, Selection>);
+  }
+  return new RecordViewObserver(opener as RecordViewOpener<Item> | null, {
     ownerSignal: options.signal,
     retainWithoutSubscribers: true,
     loadAll: options.loadAll === true,

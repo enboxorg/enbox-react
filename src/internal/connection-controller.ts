@@ -5,7 +5,7 @@ import type {
 import { BrowserConnectHandler, isConnectDeniedError } from '@enbox/browser';
 
 import { notifyListeners } from './listeners.js';
-import { EnboxBindingChangedError } from '../errors.js';
+import { EnboxBindingChangedError, EnboxResourceDrainError } from '../errors.js';
 import { isConnectionBindingCurrent } from './connection-binding.js';
 import { reportCleanupError, toError } from './errors.js';
 
@@ -95,6 +95,7 @@ const RETIRED_STATE = projectConnectionState({ phase: 'disconnected' }, EMPTY_WO
 /** Provider-scoped presentation and guards; native client disposal stays with its owner. */
 export class ConnectionController {
   private readonly listeners = new Set<() => void>();
+  private readonly resourceDrains = new Set<{ signal: AbortSignal; drain(): void | Promise<void> }>();
   private unsubscribe: (() => void) | undefined;
   private workflow = EMPTY_WORKFLOW;
   private cachedConnection?: ConnectionSnapshot;
@@ -114,6 +115,13 @@ export class ConnectionController {
   ) {}
 
   public isRetired(): boolean { return this.retired; }
+  /** Registered by session-owned models, without application-global lifecycle glue. */
+  public registerResourceDrain(signal: AbortSignal, drain: () => void | Promise<void>): () => void {
+    if (this.retired || signal.aborted) return () => {};
+    const entry = { signal, drain };
+    this.resourceDrains.add(entry);
+    return () => { this.resourceDrains.delete(entry); };
+  }
 
   /** The provider owns this workflow independently of its hook subscribers. */
   public retain(): () => void {
@@ -193,6 +201,9 @@ export class ConnectionController {
           ? walletRepairReason(expected.connection?.state) : undefined });
       }
       this.assertWorkflowCurrent(generation, expected);
+      // Reapproval repairs grants that may already be unable to flush writes.
+      if (request.action !== 'connect' || expected.walletReapprovalRequired !== true) await this.drainResources();
+      this.assertWorkflowCurrent(generation, expected);
       await policy.beforeConnect?.({ ...request, snapshot: expected });
       this.assertWorkflowCurrent(generation, expected);
       let nativeOptions: NativeConnectOptions | undefined;
@@ -244,7 +255,11 @@ export class ConnectionController {
     const expected = this.client.getSnapshot();
     const disconnectPromise = Promise.resolve().then(async () => {
       this.assertWorkflowCurrent(generation, expected);
-      if (options?.skipBeforeDisconnect !== true) await policy.beforeDisconnect?.(options);
+      if (options?.skipBeforeDisconnect !== true) {
+        await this.drainResources();
+        this.assertWorkflowCurrent(generation, expected);
+        await policy.beforeDisconnect?.(options);
+      }
       this.assertWorkflowCurrent(generation, expected);
       const { skipBeforeDisconnect: _skip, ...native } = options ?? {};
       const result = options === undefined ? await this.client.disconnect() : await this.client.disconnect(native);
@@ -282,6 +297,13 @@ export class ConnectionController {
     // actions also require a live lease while deferred retirement is pending.
     return !this.retired && (this.retentionGeneration === 0 || this.retainCount > 0);
   }
+  private async drainResources(): Promise<void> {
+    for (const resource of [...this.resourceDrains]) {
+      if (resource.signal.aborted) continue;
+      try { await resource.drain(); }
+      catch (cause) { throw new EnboxResourceDrainError(cause); }
+    }
+  }
   private assertAvailable(): void {
     if (!this.isAvailable()) throw new EnboxBindingChangedError();
   }
@@ -301,6 +323,7 @@ export class ConnectionController {
     this.connectPromise = undefined;
     this.disconnectPromise = undefined;
     this.workflow = EMPTY_WORKFLOW;
+    this.resourceDrains.clear();
     const unsubscribe = this.unsubscribe;
     this.unsubscribe = undefined;
     try { unsubscribe?.(); } catch (cause) { reportCleanupError(cause); }

@@ -246,16 +246,32 @@ for a list and `useTask(projectContextId, taskId)` for one record. The applicati
 owns selected IDs. A record query is independent of a list's filters or loaded
 page. Singletons derive their cardinality from the protocol.
 
-Controllers call the native SDK's typed CRUD methods. The same native
-observation updates React queries when controller writes complete; no separate
-React resource/store framework is needed. Explicit view sharing continues to
-use `createRecordStore` with `useRecords` or `useRecordView`.
+Typed `createRecordStore` owners bind the client, protocol, path, and query.
+They compose `SelectedRecords` and `RecordViewObserver` for view lifetime,
+readiness, pagination, and cleanup. One projection produces standard decoded rows
+for controllers, React, and mutation results. Projection WeakMaps preserve React
+snapshot identity; native SDK queries and events own the data. One-off `query`
+reads are fresh native queries, independent of the currently loaded view.
 
-`useEnboxRecords` and `useEnboxRecord` compose existing query and mutation hooks.
-They own no additional cache or native record lifetime. Collections materialize
-payloads; one-record views use a bounded native selection. Role paths and remote/role
-query options are excluded from these convenience APIs; lower-level hooks
-retain those native capabilities.
+`useEnboxRecords` and `useEnboxRecord` use the same owner and guarded native CRUD.
+Hook-owned views release on unsubscription; explicit controller owners retain
+activated views until close, abort, or binding retirement. Compatible query
+bindings share an owner. Different criteria remain independent, and metadata-only
+selection subscriptions do not activate unrelated native views.
+
+A record mutation scope is reusable by `useEnboxMutation` for product workflows.
+It fences invocation and completion without app-maintained session generations.
+Collection scopes follow the parent and activation; single-record scopes also
+follow the explicit ID and cannot revive through A-to-B-to-A changes. Native
+publications and read-only filter/pagination changes do not retire writes.
+
+`useEnboxResource` owns asynchronous application-model initialization. It captures
+configuration for a physical connection lifetime, aborts before stale work can
+publish, and disposes late results. Optional model drains register with the
+existing connection controller, replacing app-global resource pointers and
+before-connect/disconnect adapters. Reapproval preserves the repair route, and
+explicit discard remains a deliberate caller choice. Repair bytes, editor
+recovery, and product-specific disposal policy stay application-owned.
 
 Command identity includes protocol, path, parent context, selection mode,
 explicit record ID, and active selection. Query filters, pagination, and read enablement do not

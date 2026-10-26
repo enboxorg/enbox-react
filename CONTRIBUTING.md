@@ -35,9 +35,11 @@ view lifetimes, and presentation state. See [architecture](docs/architecture.md)
 for those contracts.
 
 The starter's parameterized domain hooks are the default application pattern.
-Keep selected IDs and drafts in application state. Controllers use native typed
-CRUD; live views propagate those writes to React. Reuse the existing view and
-mutation primitives before introducing another owner, registry, or factory.
+Keep selected IDs and drafts in application state. Controllers use typed
+CRUD through shared typed query owners. Live views propagate writes to React.
+Use `useEnboxResource` for application services with session lifetimes and drain
+barriers. Protocol, query, view, and mutation behavior reuse the native SDK and
+existing observers; avoid parallel definitions, registries, and state engines.
 
 Generic lifecycle and mutation regression tests belong here. Dapps retain
 protocol/permission policy, domain rules, UI behavior, and focused wiring tests;

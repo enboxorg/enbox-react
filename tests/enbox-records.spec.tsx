@@ -84,8 +84,8 @@ describe('local record commands', () => {
   });
 
   it('tracks row progress and retires commands when the parent changes', async () => {
-    const { api, wrapper } = setup();
-    const pending = deferred<{ id: string }>();
+    const { api, wrapper, record } = setup();
+    const pending = deferred<ReturnType<typeof record>>();
     api.patch.mockImplementation(() => pending.promise);
     const hook = renderHook(({ within }) => useEnboxRecords(protocol, 'space/note', { within }), {
       wrapper, initialProps: { within: 'first' },
@@ -98,7 +98,7 @@ describe('local record commands', () => {
     hook.rerender({ within: 'second' });
     expect(hook.result.current.patch.isPending).toBe(false);
     await expect(captured.mutateAsync({ id: 'b', patch: { done: true } })).rejects.toBeInstanceOf(EnboxBindingChangedError);
-    await act(async () => { pending.resolve({ id: 'a' }); await issued; });
+    await act(async () => { pending.resolve(record('a', { text: 'A', done: true })); await issued; });
     expect(captured.isCurrent()).toBe(false);
   });
 
@@ -313,8 +313,8 @@ describe('singleton selections', () => {
   });
 
   it('retires singleton controls on parent and ID-mode changes', async () => {
-    const { api, wrapper } = setup();
-    const saving = deferred<{ id: string; contextId: string }>();
+    const { api, wrapper, record } = setup<{ emoji: string }>();
+    const saving = deferred<ReturnType<typeof record>>();
     api.set.mockImplementation(() => saving.promise);
     const hook = renderHook(({ within, id }) => useEnboxRecord(protocol, 'space/choice', {
       within, ...(id === undefined ? {} : { recordId: id }), enabled: false,
@@ -330,7 +330,7 @@ describe('singleton selections', () => {
     hook.rerender({ within: 'second', id: 'selected' });
     expect(hook.result.current).not.toHaveProperty('set');
     await expect(second.mutateAsync({ emoji: 'Old' })).rejects.toBeInstanceOf(EnboxBindingChangedError);
-    await act(async () => { saving.resolve({ id: 'singleton', contextId: 'first/singleton' }); await issued; });
+    await act(async () => { saving.resolve(record('singleton', { emoji: '🌱' }, 'first/singleton')); await issued; });
     expect(captured.isCurrent()).toBe(false);
   });
 

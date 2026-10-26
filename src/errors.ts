@@ -13,3 +13,11 @@ export class EnboxNotConnectedError extends Error {
     this.name = 'EnboxNotConnectedError';
   }
 }
+
+/** A connection change was stopped to preserve pending application changes. */
+export class EnboxResourceDrainError extends Error {
+  public constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Pending changes could not be saved.', { cause });
+    this.name = 'EnboxResourceDrainError';
+  }
+}

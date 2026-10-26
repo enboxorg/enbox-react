@@ -1,18 +1,19 @@
 'use client';
 
-import type { Enbox } from '@enbox/browser';
+import type { ConnectionStore, Enbox } from '@enbox/browser';
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import type { EnboxMutationSnapshot } from '../internal/mutation-observer.js';
-import { EnboxMutationObserver } from '../internal/mutation-observer.js';
+import { EnboxMutationObserver, isMutationScope } from '../internal/mutation-observer.js';
 import { sameConnectionBinding, selectConnectionBinding } from '../internal/connection-binding.js';
 import { useConnectionStore } from './connection.js';
 import { useEnboxClient } from '../provider.js';
 
 export type EnboxMutation<Variables, Result> = (enbox: Enbox, variables: Variables) => Promise<Result>;
+export type { EnboxMutationScope } from '../internal/mutation-observer.js';
 export type EnboxMutationOptions = Readonly<{
-  /** Changing this owner resets presentation without cancelling issued writes. */
+  /** A key or record scope. Retired record scopes also fence invocation and completion. */
   scope?: unknown;
 }>;
 export type EnboxMutationResult<Variables, Result> = EnboxMutationSnapshot<Variables> & Readonly<{
@@ -34,10 +35,19 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
   options: EnboxMutationOptions = {},
 ): EnboxMutationResult<Variables, Result> {
   const client = useEnboxClient();
+  return useClientMutation(client, operation, options);
+}
+
+/** Mutation presentation for the client that owns a borrowed record query. */
+export function useClientMutation<Variables = void, Result = unknown>(
+  client: ConnectionStore, operation: EnboxMutation<Variables, Result>, options: EnboxMutationOptions = {},
+): EnboxMutationResult<Variables, Result> {
   const binding = useConnectionStore(client, selectConnectionBinding, sameConnectionBinding);
+  const scope = isMutationScope(options.scope) ? options.scope : undefined;
+  const key = scope?.key ?? options.scope;
   const observer = useMemo(
-    () => new EnboxMutationObserver<Variables>(client, binding),
-    [client, binding, options.scope],
+    () => new EnboxMutationObserver<Variables>(client, binding, scope),
+    [client, binding, key],
   );
   const snapshot = useSyncExternalStore(
     observer.subscribe,

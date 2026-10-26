@@ -23,7 +23,10 @@ let needsRepair = parameters.has('repair');
 
 function create(path: string, data: Row['value'], within?: string): Row['record'] {
   const id = `record${++sequence}`;
-  const record = { id, contextId: within === undefined ? id : `${within}/${id}` };
+  const record = { id, contextId: within === undefined ? id : `${within}/${id}`,
+    dateCreated: new Date(sequence).toISOString(), timestamp: new Date(sequence).toISOString(),
+    value: async () => entries.get(id)!.value,
+  };
   entries.set(id, { path, within, record, value: data });
   for (const view of views) view.publish();
   return record;

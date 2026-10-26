@@ -1,272 +1,177 @@
 'use client';
 
-import type {
-  ContextRoleGroups, DataForPath, Enbox, ProtocolDefinition, ProtocolPaths, ProtocolRolePaths,
-  RecordPatchInput, RecordQuery, TypedCreateRequest, TypedMaterializedRecord, TypedProtocol, TypedRecord, TypedSetRequest,
-} from '@enbox/browser';
+import type { ContextRoleGroups, DataForPath, ProtocolDefinition, RecordPatchInput, TypedProtocol } from '@enbox/browser';
+import type { DataRecordPath, EnboxRecordItem, EnboxRecordOptions, EnboxRecordsOptions, EnboxRecordStore, EnboxSingletonOptions } from '../config/record-types.js';
 import type { EnboxMutationResult } from './mutation.js';
-import type { RecordsOptions, RecordsResult } from './records.js';
+import type { EnboxMutationScope } from './mutation.js';
+import type { RecordsResult } from './records.js';
 import type { SingletonPaths } from '../internal/singleton-paths.js';
 
-import { DwnResponseError } from '@enbox/browser';
 import { useCallback, useMemo } from 'react';
 
 import { EnboxBindingChangedError } from '../errors.js';
-import { serializeQuery } from '../internal/serialize-query.js';
+import { BoundRecordStore, copyLocalQuery } from '../internal/bound-record-store.js';
+import { RecordViewObserver } from '../internal/record-view-observer.js';
+import { sameConnectionBinding, selectConnectionBinding } from '../internal/connection-binding.js';
 import { isSingletonPath } from '../internal/singleton-paths.js';
-import { useEnboxMutation } from './mutation.js';
-import { useRecords } from './records.js';
+import { serializeQuery } from '../internal/serialize-query.js';
+import { useClientMutation } from './mutation.js';
+import { useConnectionStore } from './connection.js';
+import { useObservableStore } from './observable-store.js';
+import { useOptionalEnboxClient } from '../provider.js';
 
-type DataRecordPath<Definition extends ProtocolDefinition> = Exclude<ProtocolPaths<Definition>, ProtocolRolePaths<Definition>> & string;
-type RecordScope<Path extends string> = Path extends `${string}/${string}` ? { within: string } : { within?: never };
-type RecordScopeArguments<Path extends string, Options> = Path extends `${string}/${string}`
-  ? [options: Options | null] : [options?: Options | null];
+export type { EnboxRecordItem, EnboxRecordOptions, EnboxRecordsOptions, EnboxSingletonOptions } from '../config/record-types.js';
+type ScopeArguments<Path extends string, Options> = Path extends `${string}/${string}` ? [options: Options | null] : [options?: Options | null];
 
-/** Local, session-owned selection. Remote and role-authorized reads use useRecords. */
-export type EnboxRecordsOptions<Definition extends ProtocolDefinition, Path extends ProtocolPaths<Definition> & string> =
-  Omit<RecordQuery<Definition, Path>, 'within' | 'pagination' | 'from' | 'protocolRole'> & RecordScope<Path> & {
-    enabled?: boolean;
-    pagination?: { limit: number };
-    from?: never;
-    protocolRole?: never;
-  };
-export type EnboxRecordOptions<Path extends string> = RecordScope<Path> & {
-  recordId: string; enabled?: boolean; from?: never; protocolRole?: never;
-};
-export type EnboxSingletonOptions<Path extends string> = Omit<EnboxRecordOptions<Path>, 'recordId'> & { recordId?: never };
-
-export type EnboxRecordItem<T> = Readonly<{
-  id: string;
-  contextId: string;
-  data: Readonly<T>;
-  record: TypedRecord<T>;
-}>;
-type CollectionQueryResult<State, T> = State extends unknown
-  ? Omit<State, 'records'> & Readonly<{ records: readonly EnboxRecordItem<T>[]; isReady: boolean; isLoading: boolean }>
+type CollectionQueryResult<State> = State extends unknown
+  ? State & Readonly<{ isReady: boolean; isLoading: boolean }>
   : never;
-export type EnboxRecordsResult<T> = CollectionQueryResult<RecordsResult<TypedMaterializedRecord<T>>, T> & Readonly<{
-  create: EnboxMutationResult<T, TypedRecord<T>>;
-  patch: EnboxMutationResult<{ id: string; patch: RecordPatchInput<T> }, TypedRecord<T>> & { isPendingFor(id: string): boolean };
+export type EnboxRecordsResult<T> = CollectionQueryResult<RecordsResult<EnboxRecordItem<T>>> & Readonly<{
+  scope: EnboxMutationScope;
+  create: EnboxMutationResult<T, EnboxRecordItem<T>>;
+  patch: EnboxMutationResult<{ id: string; patch: RecordPatchInput<T> }, EnboxRecordItem<T>> & { isPendingFor(id: string): boolean };
   delete: EnboxMutationResult<string, void> & { isPendingFor(id: string): boolean };
 }>;
 type SingleRecordQueryResult<State, T> = State extends unknown
-  ? Omit<State, 'records' | 'hasMore' | 'loadMore' | 'isLoadingMore'> & Readonly<{
-    data: Readonly<T> | undefined;
-    record: TypedRecord<T> | undefined;
+  ? Omit<State, 'records' | 'hasMore' | 'loadMore' | 'isLoadingMore'> & (EnboxRecordItem<T> | Readonly<{
+    [Field in keyof EnboxRecordItem<T>]: undefined;
+  }>) & Readonly<{
     isReady: boolean;
     isLoading: boolean;
     isMissing: boolean;
   }> : never;
-export type EnboxRecordResult<T> = SingleRecordQueryResult<RecordsResult<TypedMaterializedRecord<T>>, T> & Readonly<{
-  patch: EnboxMutationResult<RecordPatchInput<T>, TypedRecord<T>>;
+export type EnboxRecordResult<T> = SingleRecordQueryResult<RecordsResult<EnboxRecordItem<T>>, T> & Readonly<{
+  scope: EnboxMutationScope;
+  patch: EnboxMutationResult<RecordPatchInput<T>, EnboxRecordItem<T>>;
   delete: EnboxMutationResult<void, void>;
 }>;
 export type EnboxSingletonResult<T> = EnboxRecordResult<T> & Readonly<{
-  set: EnboxMutationResult<T, TypedRecord<T>>;
+  set: EnboxMutationResult<T, EnboxRecordItem<T>>;
 }>;
 
-function copyLocalOptions<Options extends object | null | undefined>(options: Options): Options {
-  if (options == null) return options;
-  if (Object.hasOwn(options, 'from') || Object.hasOwn(options, 'protocolRole')) {
-    throw new TypeError('Enbox record mutations require the local session. Use useRecords for remote or role-authorized reads.');
-  }
-  return JSON.parse(serializeQuery(options)) as Options;
-}
-
-function assertScope(path: string, within: string | undefined, active: boolean): void {
-  if (!active) throw new EnboxBindingChangedError();
-  const parentDepth = path.split('/').length - 1;
-  if (parentDepth === 0 ? within !== undefined
-    : typeof within !== 'string' || within.trim() === '' || within.split('/').length !== parentDepth) {
-    throw new TypeError('Nested record selections require their direct parent context; root records do not accept within.');
-  }
-}
+const idleView = new RecordViewObserver<EnboxRecordItem<unknown>>(null);
+const IDLE = Object.freeze({ ...idleView.getServerSnapshot(), selection: null });
+const inactive = async (): Promise<never> => { throw new EnboxBindingChangedError(); };
+const INACTIVE: BoundRecordStore<unknown>['commands'] = Object.freeze({ key: Object.freeze({}), isCurrent: () => false,
+  create: inactive, patch: inactive, delete: inactive, set: inactive });
 
 function useHandledControl(control: () => Promise<void>): () => Promise<void> {
   return useCallback(() => {
     const result = control();
-    // Query failures are already published in state; awaited calls still reject.
     void result.catch(() => {});
     return result;
   }, [control]);
 }
 
-/** Native patch is path-bound; also fence IDs to this hook's immutable parent scope. */
-async function assertParent(
-  read: () => Promise<{ readonly contextId: string } | undefined>, within: string | undefined,
-): Promise<void> {
-  if (within === undefined) return;
-  const record = await read();
-  // Let native patch/delete retain their missing-record and idempotent-delete contracts.
-  if (record === undefined) return;
-  if (record.contextId.split('/').slice(0, -1).join('/') !== within) {
-    throw new TypeError('The record does not belong to the selected parent context.');
-  }
+function useBoundQuery(source: unknown, path: string | undefined, value: object | null | undefined, override = false) {
+  const supplied = source instanceof BoundRecordStore ? source as BoundRecordStore<unknown> : undefined;
+  const providerClient = useOptionalEnboxClient();
+  const client = supplied?.client ?? providerClient;
+  if (client === undefined) throw new Error('Enbox hooks require an EnboxProvider or an explicit record store.');
+  const binding = useConnectionStore(client, selectConnectionBinding, sameConnectionBinding);
+  const protocol = supplied?.protocol ?? source as TypedProtocol;
+  const query = copyLocalQuery(value === undefined ? {} : value);
+  const queryKey = serializeQuery(query);
+  const within = query === null ? undefined : (query as { within?: string }).within;
+  const active = query !== null;
+  const sourceSelection = useObservableStore(override ? supplied?.selectionSource : undefined, null);
+  const commandScope = useMemo(() => ({}), [client, binding, protocol, path, within, active]);
+  const store = useMemo(() => supplied !== undefined && (!supplied.isCurrent() || !override || supplied.matches(JSON.parse(queryKey)))
+    ? supplied : source === null ? undefined : new BoundRecordStore<unknown>(
+      { client, protocol, path: path!, options: JSON.parse(queryKey), pageSize: supplied?.pageSize ?? 20,
+        ...(supplied === undefined ? {} : { signal: supplied.signal }) }, false, binding, commandScope,
+    ), [supplied, source, sourceSelection, override, client, protocol, path, queryKey, binding, commandScope]);
+  const state = useObservableStore(store, store?.getServerSnapshot() ?? IDLE);
+  return { client, store, state, commands: store?.commands ?? INACTIVE };
 }
 
-function useLocalRecordQuery<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  Path extends ProtocolPaths<Definition> & string,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  options: (RecordQuery<Definition, Path> & { enabled?: boolean }) | null | undefined,
-): RecordsResult<TypedMaterializedRecord<DataForPath<Codecs, Path>>> {
-  return useRecords<Definition, Codecs, RoleGroups, Path, true>(protocol, path, options === null ? null : {
-    ...options, pagination: options?.pagination ?? { limit: 20 }, materialize: true,
-  } as RecordsOptions<Definition, Path, true> & { materialize: true });
+function useRecordMutation<Variables, Result>(
+  query: ReturnType<typeof useBoundQuery>, operation: (variables: Variables) => Promise<Result>,
+  scope: EnboxMutationScope = query.commands,
+): EnboxMutationResult<Variables, Result> {
+  const run = useCallback((_enbox: unknown, variables: Variables) => operation(variables), [operation]);
+  return useClientMutation(query.client, run, { scope });
 }
 
-/** Materialized local collection with native, context-scoped CRUD commands. */
-export function useEnboxRecords<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  const Path extends DataRecordPath<Definition>,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  ...args: RecordScopeArguments<Path, EnboxRecordsOptions<Definition, NoInfer<Path>>>
-): EnboxRecordsResult<DataForPath<Codecs, Path>> {
-  type Value = DataForPath<Codecs, Path>;
-  const options = copyLocalOptions(args[0]);
-  const within = options?.within;
-  const active = options !== null;
-  if (active) assertScope(path, within, active);
-  const scope = useMemo(() => ({ protocol, path, within, active }), [protocol, path, within, active]);
-  const query = useLocalRecordQuery(protocol, path, options);
-  const retry = useHandledControl(query.retry);
-  const loadMore = useHandledControl(query.loadMore);
-  const create = useEnboxMutation(useCallback(async (enbox, data: Value) => {
-    assertScope(path, within, active);
-    // Role paths are excluded: ordinary data creates need only data and the selected parent.
-    return enbox.using(protocol).records.create(path, {
-      data, ...(within === undefined ? {} : { parentContextId: within }),
-    } as TypedCreateRequest<Definition, Codecs, Path>);
-  }, [protocol, path, within, active]), { scope });
-  const patch = useEnboxMutation(useCallback(async (enbox, variables: { id: string; patch: RecordPatchInput<Value> }) => {
-    assertScope(path, within, active);
-    const { id, patch: value } = variables;
-    const api = enbox.using(protocol);
-    await assertParent(() => api.records.read(path, id), within);
-    return api.records.patch(path, id, value);
-  }, [protocol, path, within, active]), { scope });
-  const remove = useEnboxMutation(useCallback(async (enbox, id: string) => {
-    assertScope(path, within, active);
-    const api = enbox.using(protocol);
-    await assertParent(() => api.records.read(path, id), within);
-    await api.records.delete(path, { recordId: id, ...(within === undefined ? {} : { within }) });
-  }, [protocol, path, within, active]), { scope });
-  const records = useMemo(() => Object.freeze(query.records.map((row) => Object.freeze({
-    id: row.record.id, contextId: row.record.contextId, data: row.value, record: row.record,
-  }))), [query.records]);
-  const patchControl = useMemo(() => Object.freeze({
-    ...patch, isPendingFor: (id: string): boolean => patch.pendingVariables.some((value) => value.id === id),
-  }), [patch]);
-  const deleteControl = useMemo(() => Object.freeze({
-    ...remove, isPendingFor: (id: string): boolean => remove.pendingVariables.includes(id),
-  }), [remove]);
-  return useMemo(() => Object.freeze({
-    ...query, records, retry, loadMore, isReady: query.status === 'ready', isLoading: query.status === 'loading',
-    create, patch: patchControl, delete: deleteControl,
-  }), [query, records, retry, loadMore, create, patchControl, deleteControl]);
-}
-
-/** Observe a schema-declared singleton by path; nested paths require their direct parent. */
-export function useEnboxRecord<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  const Path extends SingletonPaths<Definition> & DataRecordPath<Definition>,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  ...args: RecordScopeArguments<Path, EnboxSingletonOptions<NoInfer<Path>>>
-): EnboxSingletonResult<DataForPath<Codecs, Path>>;
-/** Observe and mutate one local record by its explicit ID. Null disables selection. */
-export function useEnboxRecord<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  const Path extends DataRecordPath<Definition>,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  options: EnboxRecordOptions<Path> | null,
-): EnboxRecordResult<DataForPath<Codecs, Path>>;
-export function useEnboxRecord<
-  Definition extends ProtocolDefinition,
-  Codecs extends TypedProtocol['codecs'],
-  RoleGroups extends ContextRoleGroups,
-  const Path extends DataRecordPath<Definition>,
->(
-  protocol: TypedProtocol<Definition, Codecs, RoleGroups>,
-  path: Path,
-  options?: (RecordScope<Path> & { recordId?: string; enabled?: boolean }) | null,
-): EnboxRecordResult<DataForPath<Codecs, Path>> | EnboxSingletonResult<DataForPath<Codecs, Path>> {
-  type Value = DataForPath<Codecs, Path>;
-  const hasRecordId = options != null && Object.hasOwn(options, 'recordId');
-  const copied = copyLocalOptions(options);
-  const within = copied?.within;
-  const recordId = copied?.recordId;
-  const active = copied !== null;
-  const singleton = useMemo(() => isSingletonPath(protocol.definition, path), [protocol, path]);
-  const selection = useMemo(() => {
-    if (!active) return null;
-    assertScope(path, within, true);
-    if (hasRecordId && (typeof recordId !== 'string' || recordId.trim() === '')) {
-      throw new TypeError('useEnboxRecord requires a nonempty recordId.');
-    }
-    if (!hasRecordId && !singleton) {
-      throw new TypeError('useEnboxRecord requires a recordId unless the path declares $recordLimit.max: 1.');
-    }
-    return { protocol, path, within, recordId };
-  }, [protocol, path, within, recordId, active, hasRecordId, singleton]);
-  const query = useLocalRecordQuery(protocol, path, copied === null ? null : {
-    ...copied, filter: recordId === undefined ? {} : { recordId }, pagination: { limit: 1 },
-  });
-  const retry = useHandledControl(query.retry);
-  const row = query.records[0];
-  const resolveTarget = useCallback(async (enbox: Enbox) => {
-    if (selection === null) throw new EnboxBindingChangedError();
-    const api = enbox.using(selection.protocol);
-    const id = selection.recordId;
-    if (id !== undefined) {
-      await assertParent(() => api.records.read(selection.path, id), selection.within);
-      return { api, id };
-    }
-    // Resolve the native singleton slot even when observation is paused or stale.
-    const record = await api.records.read(selection.path, {
-      filter: {}, ...(selection.within === undefined ? {} : { within: selection.within }),
-    });
-    return { api, id: record?.id };
-  }, [selection]);
-  const patch = useEnboxMutation(useCallback(async (enbox, value: RecordPatchInput<Value>) => {
-    const { api, id } = await resolveTarget(enbox);
-    if (id === undefined) throw new DwnResponseError('useEnboxRecord.patch', { code: 404, detail: 'Not Found' });
-    return api.records.patch(path, id, value);
-  }, [resolveTarget, path]), { scope: selection });
-  const remove = useEnboxMutation(useCallback(async (enbox, _variables: void) => {
-    const { api, id } = await resolveTarget(enbox);
-    if (id !== undefined) {
-      await api.records.delete(path, { recordId: id, ...(within === undefined ? {} : { within }) });
-    }
-  }, [resolveTarget, path, within]), { scope: selection });
-  const set = useEnboxMutation(useCallback(async (enbox, data: Value) => {
-    if (selection === null) throw new EnboxBindingChangedError();
-    return enbox.using(selection.protocol).records.set(selection.path as SingletonPaths<Definition>, {
-      data, ...(selection.within === undefined ? {} : { within: selection.within }),
-    } as TypedSetRequest<Codecs, SingletonPaths<Definition>>);
-  }, [selection]), { scope: selection });
+/** Borrow a controller's owner, including an absent owner during workspace startup. */
+export function useEnboxRecords<T, Selection, Path extends string, Singleton extends boolean>(
+  store: EnboxRecordStore<T, Selection, Path, Singleton> | null, options?: Selection | null,
+): EnboxRecordsResult<T>;
+export function useEnboxRecords<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>>(protocol: TypedProtocol<D, C, R>, path: Path,
+    ...args: ScopeArguments<Path, EnboxRecordsOptions<D, NoInfer<Path>>>): EnboxRecordsResult<DataForPath<C, Path>>;
+export function useEnboxRecords(source: unknown, path?: string | object | null, options?: object | null): unknown {
+  const supplied = source instanceof BoundRecordStore ? source as BoundRecordStore<unknown> : undefined;
+  const query = useBoundQuery(source, supplied?.path ?? path as string | undefined,
+    supplied === undefined ? options : path as object | null | undefined, supplied !== undefined && path !== undefined);
+  const commands = query.commands;
+  const create = useRecordMutation(query, commands.create);
+  const patch = useRecordMutation(query, commands.patch);
+  const remove = useRecordMutation(query, useCallback((id: string) => commands.delete(id), [commands]));
+  const retry = useHandledControl(query.state.retry);
+  const loadMore = useHandledControl(query.store?.loadMore ?? inactive);
   return useMemo(() => {
-    const { records: _rows, loadMore: _load, hasMore: _more, isLoadingMore: _loading, ...state } = query;
-    return Object.freeze({
-      ...state, retry, data: row?.value, record: row?.record,
-      isReady: query.status === 'ready', isLoading: query.status === 'loading',
-      isMissing: query.status === 'ready' && row === undefined,
-      patch, delete: remove, ...(singleton && !hasRecordId ? { set } : {}),
+    const { selection: _selection, ...state } = query.state;
+    return Object.freeze({ ...state, retry, loadMore, scope: commands,
+      isReady: state.status === 'ready', isLoading: state.status === 'loading', create,
+      patch: Object.freeze({ ...patch, isPendingFor: (id: string) => patch.pendingVariables.some((input) => input.id === id) }),
+      delete: Object.freeze({ ...remove, isPendingFor: (id: string) => remove.pendingVariables.includes(id) }),
     });
-  }, [query, row, retry, patch, remove, set, singleton, hasRecordId]);
+  }, [query.state, commands, retry, loadMore, create, patch, remove]);
+}
+
+export function useEnboxRecord<T, Selection, Path extends string>(store: EnboxRecordStore<T, Selection, Path, true>): EnboxSingletonResult<T>;
+export function useEnboxRecord<T, Selection, Path extends string>(store: EnboxRecordStore<T, Selection, Path>): EnboxRecordResult<T>;
+export function useEnboxRecord<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends SingletonPaths<D> & DataRecordPath<D>>(protocol: TypedProtocol<D, C, R>, path: Path,
+    ...args: ScopeArguments<Path, EnboxSingletonOptions<NoInfer<Path>>>): EnboxSingletonResult<DataForPath<C, Path>>;
+export function useEnboxRecord<D extends ProtocolDefinition, C extends TypedProtocol['codecs'], R extends ContextRoleGroups,
+  const Path extends DataRecordPath<D>>(protocol: TypedProtocol<D, C, R>, path: Path,
+    options: EnboxRecordOptions<Path> | null): EnboxRecordResult<DataForPath<C, Path>>;
+export function useEnboxRecord(source: unknown, path?: string, options?: object | null): unknown {
+  const supplied = source instanceof BoundRecordStore ? source as BoundRecordStore<unknown> : undefined;
+  const protocol = supplied?.protocol ?? source as TypedProtocol;
+  const recordPath = supplied?.path ?? path!;
+  const hasRecordId = options != null && Object.hasOwn(options, 'recordId');
+  const copied = copyLocalQuery(options === undefined ? {} : options) as { within?: string; recordId?: string; enabled?: boolean } | null;
+  if (hasRecordId && (typeof copied?.recordId !== 'string' || !copied.recordId.trim())) {
+    throw new TypeError('useEnboxRecord requires a nonempty recordId.');
+  }
+  const query = useBoundQuery(source, recordPath, copied === null ? null : {
+    ...(copied.within === undefined ? {} : { within: copied.within }),
+    ...(copied.enabled === undefined ? {} : { enabled: copied.enabled }),
+    filter: copied.recordId === undefined ? {} : { recordId: copied.recordId }, pagination: { limit: 1 },
+  });
+  const selection = query.state.selection;
+  const recordId = supplied === undefined ? copied?.recordId : selection?.filter?.recordId;
+  const byId = supplied === undefined ? hasRecordId : recordId !== undefined;
+  const singleton = isSingletonPath(protocol.definition, recordPath);
+  if (selection !== null && (!byId && !singleton || byId && (typeof recordId !== 'string' || !recordId.trim()))) {
+    throw new TypeError('useEnboxRecord requires a recordId unless the path declares $recordLimit.max: 1.');
+  }
+  if (supplied !== undefined && selection !== null && (Object.keys(selection.filter ?? {}).some((key) => key !== 'recordId') || singleton && byId)) {
+    throw new TypeError('A shared single-record query must select one ID or an unfiltered singleton.');
+  }
+  const commands = query.commands;
+  const recordScope = supplied?.recordScope;
+  const scope = useMemo(() => Object.freeze({ key: {},
+    isCurrent: (): boolean => commands.isCurrent() && (supplied === undefined || supplied.recordScope === recordScope),
+    ...(commands.subscribe === undefined ? {} : { subscribe: commands.subscribe }),
+  }), [commands.key, recordScope, recordId, byId]);
+  const patch = useRecordMutation(query, useCallback((patch: RecordPatchInput<unknown>) => commands.patch(
+    recordId === undefined ? { patch } : { id: recordId, patch },
+  ), [commands, recordId]), scope);
+  const remove = useRecordMutation(query, useCallback((_variables: void) => commands.delete(recordId), [commands, recordId]), scope);
+  const set = useRecordMutation(query, commands.set, scope);
+  const retry = useHandledControl(query.state.retry);
+  const row = query.state.records[0];
+  return useMemo(() => {
+    const { records: _records, hasMore: _more, isLoadingMore: _loading, selection: _selection, ...state } = query.state;
+    return Object.freeze({ ...state, retry, scope, id: row?.id, contextId: row?.contextId,
+      dateCreated: row?.dateCreated, timestamp: row?.timestamp, data: row?.data, record: row?.record,
+      isReady: state.status === 'ready', isLoading: state.status === 'loading',
+      isMissing: state.status === 'ready' && row === undefined,
+      patch, delete: remove, ...(singleton && !byId ? { set } : {}),
+    });
+  }, [query.state, row, retry, scope, patch, remove, set, singleton, byId]);
 }

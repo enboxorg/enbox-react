@@ -145,3 +145,11 @@ without I/O, and Activity teardown. The encrypted DWN integration also proves
 native controller writes update React's list/detail queries directly, including
 a detail record excluded by the list's filter. Dapps should retain their domain
 and UI tests rather than duplicate this SDK's generic lifecycle guarantees.
+
+Shared typed-record tests cover inert construction, controller/React ownership,
+metadata-only query selection, independent parent scopes, immutable inputs,
+permanent retirement through A-to-B-to-A selection, and scoped product mutations.
+The session-resource suite owns initialization, late completion, abort, retry,
+Strict Mode, and connection drain/discard barriers. Dapps retain product-policy
+checks; Notesd's native integration exercises the actual protocol, workspace,
+corpus/search, editor-session drain, and React record bindings together.

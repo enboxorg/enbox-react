@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createEnboxTestContext } from '@enbox/api/testing';
-import { defineApplicationManifest } from '@enbox/react/config';
+import { createRecordStore, defineApplicationManifest } from '@enbox/react/config';
 
 import app from '../src/app.json' with { type: 'json' };
 import { TaskBoardProtocol } from '../src/demo/protocol.ts';
@@ -8,34 +8,40 @@ import { TaskBoardProtocol } from '../src/demo/protocol.ts';
 assert.notEqual(app.id, app.name, 'The consumer must exercise distinct stable ID and display name.');
 assert.equal(TaskBoardProtocol.definition.protocol, `https://example.com/${encodeURIComponent(app.id)}/demo/v2`);
 const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [TaskBoardProtocol] }) });
-let view;
+const snapshot = Object.freeze({ phase: 'connected', enbox: context.enbox, session: context.session });
+const client = { getSnapshot: () => snapshot, subscribe: () => () => {} };
+const projects = createRecordStore({ client, protocol: TaskBoardProtocol, path: 'project' });
+let tasks;
+let homeTasks;
 try {
   const records = context.enbox.using(TaskBoardProtocol).records;
-  const work = await records.create('project', { data: { name: 'Work' } });
-  const home = await records.create('project', { data: { name: 'Home' } });
-  const task = await records.create('project/task', { data: { title: 'Ship it', completed: false }, parentContextId: work.contextId });
-  const other = await records.create('project/task', { data: { title: 'Water the plants', completed: false }, parentContextId: home.contextId });
-  const completed = await records.patch('project/task', task.id, { completed: true });
-  const renamed = await records.patch('project/task', task.id, { title: 'Ship the task board' });
-  assert.ok(work.encryption && task.encryption && completed.encryption && renamed.encryption, 'Projects and task updates must remain encrypted.');
+  const work = await projects.commands.create({ name: 'Work' });
+  const home = await projects.commands.create({ name: 'Home' });
+  tasks = createRecordStore({ client, protocol: TaskBoardProtocol, path: 'project/task', options: { within: work.contextId } });
+  homeTasks = createRecordStore({ client, protocol: TaskBoardProtocol, path: 'project/task', options: { within: home.contextId } });
+  const task = await tasks.commands.create({ title: 'Ship it', completed: false });
+  const other = await homeTasks.commands.create({ title: 'Water the plants', completed: false });
+  const completed = await tasks.commands.patch({ id: task.id, patch: { completed: true } });
+  const renamed = await tasks.commands.patch({ id: task.id, patch: { title: 'Ship the task board' } });
+  assert.ok(work.record.encryption && task.record.encryption && completed.record.encryption && renamed.record.encryption, 'Projects and task updates must remain encrypted.');
   assert.equal(renamed.id, task.id, 'Completing and renaming a task must preserve its ID.');
   assert.deepEqual(await (await records.read('project/task', task.id)).data.json(), { title: 'Ship the task board', completed: true });
-  await assert.rejects(records.create('project/task', { data: { title: '', completed: false }, parentContextId: work.contextId }), { name: 'RecordValidationError' });
-  await assert.rejects(records.patch('project/task', task.id, { completed: 'yes' }), { name: 'RecordValidationError' });
-  view = await records.observe('project/task', { within: work.contextId, filter: { recordId: task.id }, materialize: true, pagination: { limit: 1 } });
-  const snapshot = await view.ready();
-  assert.equal(snapshot.records.length, 1);
-  assert.equal(snapshot.records[0].record.id, task.id);
-  assert.deepEqual(snapshot.records[0].value, { title: 'Ship the task board', completed: true });
-  const homeTasks = await records.query('project/task', { within: home.contextId });
-  assert.deepEqual(homeTasks.records.map((record) => record.id), [other.id], 'Each project must select its own tasks.');
-  const reopened = await records.patch('project/task', task.id, { completed: false });
-  assert.deepEqual(await reopened.data.json(), { title: 'Ship the task board', completed: false });
-  await records.delete('project/task', { recordId: task.id, within: work.contextId });
+  await assert.rejects(tasks.commands.create({ title: '', completed: false }), { name: 'RecordValidationError' });
+  await assert.rejects(tasks.commands.patch({ id: task.id, patch: { completed: 'yes' } }), { name: 'RecordValidationError' });
+  await assert.rejects(tasks.commands.patch({ id: other.id, patch: { completed: true } }), /selected parent context/);
+  await tasks.ready();
+  const selected = await tasks.query({ within: work.contextId, filter: { recordId: task.id } });
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].id, task.id);
+  assert.deepEqual(selected[0].data, { title: 'Ship the task board', completed: true });
+  assert.deepEqual((await homeTasks.query({ within: home.contextId })).map((row) => row.id), [other.id], 'Each project must select its own tasks.');
+  const reopened = await tasks.commands.patch({ id: task.id, patch: { completed: false } });
+  assert.deepEqual(reopened.data, { title: 'Ship the task board', completed: false });
+  await tasks.commands.delete(task.id);
   assert.equal(await records.read('project/task', task.id), undefined);
   assert.equal((await records.query('project/task', { within: work.contextId })).records.length, 0);
-  console.log('Starter task board passed: encrypted projects, scoped tasks, completion/reopening, selected-record reads, and codec validation.');
+  console.log('Starter shared records passed: encrypted projects, scoped tasks, completion/reopening, selected-record reads, and codec validation.');
 } finally {
-  try { await view?.close(); }
+  try { await Promise.all([projects.close(), tasks?.close(), homeTasks?.close()]); }
   finally { await context.close(); }
 }

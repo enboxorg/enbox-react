@@ -6,6 +6,18 @@ import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError, EnboxNotConnectedError } from '../errors.js';
 import { reportCleanupError, toError } from './errors.js';
 
+/** A data target whose lifetime can fence a custom application mutation. */
+export type EnboxMutationScope = Readonly<{
+  key: unknown;
+  isCurrent(): boolean;
+  subscribe?(notify: () => void): () => void;
+}>;
+
+export function isMutationScope(value: unknown): value is EnboxMutationScope {
+  return value !== null && typeof value === 'object'
+    && 'isCurrent' in value && typeof value.isCurrent === 'function';
+}
+
 export type EnboxMutationSnapshot<Variables = unknown> = Readonly<{
   pendingCount: number;
   pendingVariables: readonly Variables[];
@@ -33,6 +45,7 @@ export class EnboxMutationObserver<Variables = unknown> {
   public constructor(
     private readonly _client: ConnectionStore,
     private readonly _binding: ConnectionBinding,
+    private readonly _scope?: EnboxMutationScope,
   ) {}
 
   public readonly getSnapshot = (): EnboxMutationSnapshot<Variables> => this.isCurrent() ? this._snapshot : this._emptySnapshot;
@@ -42,9 +55,14 @@ export class EnboxMutationObserver<Variables = unknown> {
     const listener = (): void => { notify(); };
     this._listeners.add(listener);
     if (this._listeners.size === 1) {
-      this._unsubscribe = subscribeToConnectionBinding(this._client, this._binding, () => {
+      const invalidate = (): void => {
         if (!this.isCurrent()) this.clear();
-      });
+      };
+      const unsubscribeClient = subscribeToConnectionBinding(this._client, this._binding, invalidate);
+      const unsubscribeScope = this._scope?.subscribe?.(invalidate);
+      this._unsubscribe = () => {
+        try { unsubscribeClient(); } finally { unsubscribeScope?.(); }
+      };
     }
     return () => {
       if (!this._listeners.delete(listener) || this._listeners.size !== 0) return;
@@ -100,7 +118,7 @@ export class EnboxMutationObserver<Variables = unknown> {
   }
 
   public readonly isCurrent = (): boolean => this._listeners.size > 0
-    && isConnectionBindingCurrent(this._client, this._binding);
+    && isConnectionBindingCurrent(this._client, this._binding) && (this._scope?.isCurrent() ?? true);
 
   /** Capture a UI guard that cannot become current again after resubscription. */
   public captureGuard(): () => boolean {

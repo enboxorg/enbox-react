@@ -58,18 +58,22 @@ version changes are documented in
 | One record by ID, or a schema-declared singleton by path | `useEnboxRecord(protocol, path, options)` |
 | Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
 | A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
-| One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
+| Shared typed records and CRUD | `createRecordStore({ client, protocol, path, options, signal })` with `useEnboxRecords(store)` |
+| Session-owned application services | `useEnboxResource(initializer)` |
+| Advanced native views | `createRecordStore(opener)` with `useRecords(store)` |
 | A selected slice of an existing store | `useObservableStore(store, fallback, selector)` |
 
 Domain hooks such as `useTasks(projectContextId)` and
-`useTask(projectContextId, taskId)` fix protocol paths in one module and take
-query arguments directly. Selection IDs belong to application state or routing;
-list and detail views can select independently. No additional resource
-definitions or registration are required. Each call owns its view and mutation
-state. To share both, call the domain hook once in a parent and pass its result
-through props or context. For a view also used by headless controllers, create a store for the
-owning session/page, pass it through props or context, and close it or abort its
-owner signal when that scope ends. Give shared filters and pagination one owner.
+`useTask(projectContextId, taskId)` receive query arguments directly. Selection
+IDs and form drafts belong to application state or routing. Protocols supply
+types and singleton cardinality; no second definition or registration is needed.
+
+Controllers and React can borrow one typed owner. Its rows already include
+`id`, `contextId`, `dateCreated`, `timestamp`, decoded `data`, and the native
+`record`. Standard mutations return that same row shape. Use `result.record`
+for native handle methods; `result.data` is the decoded application value.
+Mutation presentation remains local to each React binding. Pass a binding
+through props/context when several controls need the same progress state.
 
 ## Define the application
 
@@ -373,17 +377,79 @@ changes without a polling or cache-invalidation loop.
 
 ## Share records with application controllers
 
-Controllers use the native typed SDK directly:
+For a session-owned catalog, construct a typed owner once:
 
-```ts
-const records = enbox.using(TaskBoardProtocol).records;
-await records.patch('project/task', taskId, { completed: true });
+```tsx
+import { createRecordStore } from '@enbox/react/config';
+import { useEnboxRecords, useEnboxResource, type EnboxResourceContext } from '@enbox/react';
+
+function openNotes({ client, signal }: EnboxResourceContext) {
+  return createRecordStore({ client, signal, protocol: NotesProtocol, path: 'note', loadAll: true });
+}
+
+// Inside a React component:
+const model = useEnboxResource(openNotes);
+const notes = useEnboxRecords(model.data ?? null);
+
+// A service holding that owner uses the same rows and CRUD:
+async function createFromController(owner: ReturnType<typeof openNotes>) {
+  const created = await owner.commands.create({ title: 'Created by a controller' });
+  await owner.commands.patch({ id: created.id, patch: { title: 'Updated' } });
+}
 ```
 
-Native observation updates affected React queries automatically. Controllers
-need no React CRUD wrapper or cache-invalidation step. The hooks add query
-subscription and mutation presentation to the native SDK. Use the existing
-`createRecordStore` only when consumers need to share an explicitly owned view.
+`createRecordStore` performs no I/O until subscribed, retried, or awaited with
+`ready()`. Controller commands can run without opening a view. Multiple bindings
+of the same owner share its native view, pagination, and projected array.
+Unmounting a borrower leaves a controller-owned view open. Close or abort the
+owner when its application scope ends.
+
+Nested owners accept query options such as `{ within: projectContextId }`.
+`select(options)` changes an owner's current query; `null` releases its view.
+`useEnboxRecords(owner, options)` borrows the matching query or observes a
+different query independently. A headless controller can use `query(options)`
+to read all matching rows freshly without relying on the visible page.
+Commands accept an explicit `within` override for off-screen domain workflows.
+Native observation updates affected bindings; apps need no manual row insertion,
+result projection, polling, or invalidation after writes.
+
+Single-record hooks still receive a record ID or infer a singleton from the
+protocol. Their data is independent of list filters and pagination. A shared
+ID-filtered owner can also be passed to `useEnboxRecord(owner)`.
+
+For custom product workflows, reuse the record target's scope:
+
+```tsx
+const duplicate = useEnboxMutation(
+  async () => copyPageAndAttachments(pageId),
+  { scope: pages.scope },
+);
+await duplicate.mutateAsync();
+if (duplicate.isCurrent()) closeDialog();
+```
+
+The library fences invocation, pending state, errors, and completion guards when
+the target or session retires. Application code owns draft versions and UI effects.
+
+### Own application services
+
+`useEnboxResource` initializes a model for the current connected facade/session,
+aborts its signal on replacement or unmount, closes late initialization, and
+exposes `status`, `data`, `error`, and `retry()`. Initializers and optional product
+`dispose` callbacks are captured for the connection lifetime; use a React key to
+replace their configuration. The context supplies `client`, `enbox`, `session`,
+and `signal`. Pass its signal to owned stores and other cancellable services.
+
+Models expose `close()` and may expose `drain()`. The connection workflow awaits
+registered model drains before normal connection changes or disconnect. A failed
+drain preserves the connection and rejects with `EnboxResourceDrainError`, whose
+`cause` preserves the failure. Wallet reapproval skips impossible drains; an
+explicit `skipBeforeDisconnect` choice bypasses the barrier for discard UX.
+Product-specific repair retention remains in the model/disposer. Disposal context
+includes the retiring session, its transition snapshot, and whether initialization
+was published. Server rendering initializes nothing.
+
+### Advanced native views
 
 When startup, search, or other controllers also read a catalog, create one
 store for that application scope:

@@ -38,5 +38,7 @@ export type {
   EnboxSingletonOptions, EnboxSingletonResult,
 } from './hooks/enbox-records.js';
 export { useEnboxMutation } from './hooks/mutation.js';
-export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult } from './hooks/mutation.js';
-export { EnboxBindingChangedError, EnboxNotConnectedError } from './errors.js';
+export { useEnboxResource } from './hooks/resource.js';
+export type { EnboxResourceContext, EnboxResourceOptions, EnboxResourceResult } from './hooks/resource.js';
+export type { EnboxMutation, EnboxMutationOptions, EnboxMutationResult, EnboxMutationScope } from './hooks/mutation.js';
+export { EnboxBindingChangedError, EnboxNotConnectedError, EnboxResourceDrainError } from './errors.js';

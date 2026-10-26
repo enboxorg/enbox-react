@@ -63,6 +63,13 @@ The removable demo lives entirely in `src/demo`:
   `isCurrent()` before clearing drafts or closing details. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
 
+The same hooks support shared controller-owned catalogs through
+`createRecordStore` and `useEnboxResource`; see the React SDK's shared ownership
+guide when adding search, background operations, or an editor service. Models
+expose `close()` and optional `drain()` so the library manages session replacement
+and safe connection changes. Keep product rules in those services. The protocol
+remains the source of record types, hierarchy, and singleton cardinality.
+
 To replace the demo, register your own typed application protocol in
 `application.ts` in place of `TaskBoardProtocol`. Then delete `src/demo` and remove
 the `TaskBoard` import and component from `App.tsx`. Enbox requires at least one

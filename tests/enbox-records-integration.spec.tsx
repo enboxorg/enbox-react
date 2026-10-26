@@ -4,7 +4,7 @@ import { createEnboxTestContext } from '@enbox/api/testing';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
+import { createRecordStore, defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
 import { EnboxBindingChangedError, EnboxProvider, useEnboxRecord, useEnboxRecords } from '../src/index.js';
 import { controlledClient } from './helpers.js';
 
@@ -53,10 +53,10 @@ describe('singleton commands with a real encrypted DWN', () => {
         await act(async () => {
           const created = await hook.result.current.set.mutateAsync({ title: 'First', done: false });
           id = created.id;
-          expect(created.encryption).toBeDefined();
+          expect(created.record.encryption).toBeDefined();
           const replaced = await hook.result.current.set.mutateAsync({ title: 'Replaced', done: false });
           expect(replaced.id).toBe(id);
-          expect(replaced.encryption).toBeDefined();
+          expect(replaced.record.encryption).toBeDefined();
         });
         if (enabled) {
           await waitFor(() => expect(hook.result.current.data?.title).toBe('Replaced'));
@@ -66,8 +66,8 @@ describe('singleton commands with a real encrypted DWN', () => {
         await act(async () => {
           const updated = await hook.result.current.patch.mutateAsync((current) => ({ title: `${current.title} patched`, done: true }));
           expect(updated.id).toBe(id);
-          expect(updated.encryption).toBeDefined();
-          expect(await updated.value()).toEqual({ title: 'Replaced patched', done: true });
+          expect(updated.record.encryption).toBeDefined();
+          expect(updated.data).toEqual({ title: 'Replaced patched', done: true });
           await hook.result.current.delete.mutateAsync();
         });
         expect(await records.read(path, { filter: {}, ...(within === undefined ? {} : { within }) })).toBeUndefined();
@@ -90,6 +90,35 @@ describe('singleton commands with a real encrypted DWN', () => {
 });
 
 describe('explicit record commands with a real encrypted DWN', () => {
+  it('shares one catalog between a controller and React without app-side projection or insertion', async () => {
+    const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [protocol] }) });
+    const { client } = controlledClient({ phase: 'connected', enbox: context.enbox, session: context.session });
+    const store = createRecordStore({ client, protocol, path: 'project/note', options: null, loadAll: true });
+    try {
+      const parent = await context.enbox.using(protocol).records.create('project', { data: { name: 'Parent' } });
+      await store.select({ within: parent.contextId });
+      const controllerRows = await store.ready();
+      expect(controllerRows.records).toEqual([]);
+      const first = renderHook(() => useEnboxRecords(store));
+      const second = renderHook(() => useEnboxRecords(store));
+      try {
+        expect(first.result.current.records).toBe(store.getSnapshot().records);
+        expect(second.result.current.records).toBe(first.result.current.records);
+        const created = await store.commands.create({ title: 'Controller-created', done: false });
+        expect(created.record.encryption).toBeDefined();
+        expect(created.data.title).toBe('Controller-created');
+        expect((await store.query({ within: parent.contextId })).map((row) => row.id)).toEqual([created.id]);
+        await waitFor(() => expect(first.result.current.records[0]?.id).toBe(created.id));
+        expect(second.result.current.records).toBe(store.getSnapshot().records);
+        await act(async () => { await first.result.current.patch.mutateAsync({ id: created.id, patch: { done: true } }); });
+        await waitFor(() => expect(store.getSnapshot().records[0]?.data.done).toBe(true));
+        first.unmount();
+        await store.commands.delete(created.id);
+        await waitFor(() => expect(second.result.current.records).toEqual([]));
+      } finally { first.unmount(); second.unmount(); }
+    } finally { await store.close(); await context.close(); }
+  });
+
   it('observes native controller writes in independent list and detail queries', async () => {
     const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [protocol] }) });
     try {
@@ -119,7 +148,7 @@ describe('explicit record commands with a real encrypted DWN', () => {
         expect(hook.result.current.list.records.map((row) => row.id)).toEqual([first.id]);
         await act(async () => {
           const created = await hook.result.current.list.create.mutateAsync({ title: 'Created through React', done: false });
-          expect(created.encryption).toBeDefined();
+          expect(created.record.encryption).toBeDefined();
           expect(await (await records.read('project/note', created.id))!.value()).toEqual({ title: 'Created through React', done: false });
           await records.delete('project/note', { recordId: second.id, within: parent.contextId });
         });
@@ -150,8 +179,8 @@ describe('explicit record commands with a real encrypted DWN', () => {
         await act(async () => {
           const updated = await hook.result.current.patch.mutateAsync((current) => ({ title: `${current.title} updated`, done: true }));
           expect(updated.id).toBe(created.id);
-          expect(updated.encryption).toBeDefined();
-          expect(await updated.data.json()).toEqual({ title: 'First updated', done: true });
+          expect(updated.record.encryption).toBeDefined();
+          expect(updated.data).toEqual({ title: 'First updated', done: true });
         });
         if (enabled) await waitFor(() => expect(hook.result.current.data?.title).toBe('First updated'));
         else expect(hook.result.current.status).toBe('idle');
