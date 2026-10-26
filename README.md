@@ -99,7 +99,8 @@ export function Notes() {
 retains resources only after React commits. Equivalent collection selections
 share native views and command progress across components and headless code.
 Nested paths expose keyed families such as `feature.pages.within(notebookContextId)`.
-The starter's list and detail panel select the same task collection.
+The starter's detail panel reuses loaded list rows and opens a bounded record
+selection when the chosen task is outside the retained list window.
 
 Headless consumers resolve the same instance with `runtime.store(NotesStore)`.
 They retain resources explicitly, await `ready()`, and release their leases when

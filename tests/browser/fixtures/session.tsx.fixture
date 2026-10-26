@@ -18,6 +18,7 @@ const entries = new Map<string, Entry>();
 const views = new Set<FixtureView>();
 let sequence = 0;
 let failRead = parameters.has('read-error');
+let failSelectedRead = parameters.has('selected-read-error');
 let taskObservations = 0;
 let failWrite = parameters.has('write-error');
 let finishSave: (() => void) | undefined;
@@ -33,6 +34,11 @@ function create(path: string, data: Row['value'], within?: string): Row['record'
 if (parameters.has('seed')) {
   const project = create('project', { name: 'First project' });
   create('project/task', { title: 'First task', completed: false }, project.contextId);
+  if (parameters.has('full-project')) {
+    for (let index = 2; index <= 20; index++) {
+      create('project/task', { title: `Task ${index}`, completed: false }, project.contextId);
+    }
+  }
 }
 
 class FixtureView implements ExpandableRecordView<Row> {
@@ -86,6 +92,10 @@ const enbox = {
   using: () => ({ records: {
     observe: async (path: string, options: { within?: string; filter?: { recordId?: string }; pagination: { limit: number }; dateSort?: string }) => {
       if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
+      if (path === 'project/task' && options.filter?.recordId !== undefined && failSelectedRead) {
+        failSelectedRead = false;
+        throw new Error('Fixture selected read failed.');
+      }
       if (path === 'project/task') taskObservations += 1;
       const view = new FixtureView(path, options.within, options.filter?.recordId, options.pagination.limit, options.dateSort === 'createdDescending');
       views.add(view);

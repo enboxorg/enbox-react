@@ -61,13 +61,14 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
   const updates = useStore(resource.patch);
   const paging = useStore(board.moreTasks);
   const [title, setTitle] = useState('');
-  const [selectedId, setSelectedId] = useState<string>();
+  // Reopening the same record creates a new UI target for completion guards.
+  const [selection, setSelection] = useState<{ id: string }>();
   const creating = creation.pendingCount > 0;
   async function addTask(event: FormEvent) {
     event.preventDefault();
     try {
       const record = await board.createTask({ within, title });
-      if (resource.create.isCurrent()) { setSelectedId(record.id); setTitle(''); }
+      if (resource.create.isCurrent()) { setSelection({ id: record.id }); setTitle(''); }
     } catch { /* The scoped create command exposes the error below. */ }
   }
   return <div className="project-content">
@@ -88,14 +89,14 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
           disabled={disabled || updates.pendingVariables.some((input) => input.id === record.id)}
           onChange={(event) => { void resource.patch.run({ id: record.id, patch: { completed: event.currentTarget.checked } }); }} />
         <button type="button" className="button button-quiet" aria-label={`Open task ${value.title}`}
-          disabled={disabled} aria-pressed={record.id === selectedId} onClick={() => setSelectedId(record.id)}>{value.title}</button>
+          disabled={disabled} aria-pressed={record.id === selection?.id} onClick={() => setSelection({ id: record.id })}>{value.title}</button>
       </li>)}
     </ul>
     {tasks.hasMore && <button type="button" disabled={disabled || paging.pendingVariables.includes(within)}
       onClick={() => { void board.moreTasks.run(within); }}>More tasks</button>}
-    {selectedId !== undefined
-      ? <TaskDetails key={selectedId} within={within} recordId={selectedId} disabled={disabled}
-        onClose={() => setSelectedId((current) => current === selectedId ? undefined : current)} />
+    {selection !== undefined
+      ? <TaskDetails key={selection.id} within={within} recordId={selection.id} disabled={disabled}
+        onClose={() => setSelection((current) => current === selection ? undefined : current)} />
       : <p role="status">Select a task to see its details.</p>}
   </div>;
 }
@@ -105,9 +106,14 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
 }) {
   const board = useFeature(TaskBoardStore);
   const resource = board.tasks.within(within);
-  // The detail panel selects the list's existing resource and opens no second view.
-  const task = useStore(resource, (snapshot) => snapshot.records.find((row) => row.record.id === recordId));
-  const status = useStore(resource, (snapshot) => snapshot.status);
+  const list = useStore(resource);
+  const listed = list.records.some((row) => row.record.id === recordId);
+  // A bounded window cannot prove an unlisted record is missing. Reuse loaded
+  // rows, and acquire a single-record view only while that proof is unavailable.
+  const needsLookup = !listed && (list.status !== 'ready' || list.hasMore);
+  const selection = useStore(needsLookup ? board.taskById(within, recordId) : resource);
+  const task = selection.records.find((row) => row.record.id === recordId);
+  const status = selection.status;
   const updates = useStore(resource.patch);
   const deletion = useStore(resource.delete);
   const [draft, setDraft] = useState<string>();
@@ -130,7 +136,10 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
   return <section className="task-details" aria-label="Task details">
     <h3>Task details</h3>
     {status === 'error' && <p role="alert">Couldn’t load the task. <button type="button"
-      disabled={disabled} onClick={() => { void board.retryTasks.run(within); }}>Retry task</button></p>}
+      disabled={disabled} onClick={() => {
+        if (needsLookup) void board.retryTask.run({ within, recordId });
+        else void board.retryTasks.run(within);
+      }}>Retry task</button></p>}
     {data === undefined && status === 'loading' && <p role="status">Loading task…</p>}
     {data === undefined && status === 'ready' && <p role="status">This task is no longer available.</p>}
     {data !== undefined && <>

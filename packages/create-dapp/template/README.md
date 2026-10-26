@@ -80,8 +80,9 @@ The replaceable task feature lives in `src/features/tasks`:
   with `tasks.within(projectContextId)`. Creation and rename defaults live here.
   Native resource commands share pending/error state across consumers.
 - `components/TaskBoard.tsx` resolves the feature with `useFeature(TaskBoardStore)`
-  and reads resources or commands with `useStore`. Task details select a row from
-  the list's existing resource. Input drafts and UI selection remain in React.
+  and reads resources or commands with `useStore`. Task details reuse loaded list
+  rows and acquire a bounded single-record observation for a selection outside
+  the retained window. Input drafts and UI selection remain in React.
   Awaited handlers check command authorization before applying their UI result.
 - `components/tasks.css` styles the task feature. Shared app and profile styles
   live in `src/style.css`.

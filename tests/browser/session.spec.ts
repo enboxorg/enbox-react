@@ -124,6 +124,66 @@ test('retires pending completion presentation when disconnecting', async ({ page
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
+test('reads a newly selected task outside the retained list window', async ({ page }) => {
+  await page.goto(`${fixture}?seed&full-project`);
+  await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(20);
+  await page.getByLabel('New task', { exact: true }).fill('Beyond the first page');
+  await page.getByRole('button', { name: 'Add task', exact: true }).click();
+
+  const details = page.getByRole('region', { name: 'Task details', exact: true });
+  await expect(details).toContainText('Beyond the first page · To do');
+  await expect(details.getByText('This task is no longer available.', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: 'Complete Beyond the first page', exact: true })).toHaveCount(0);
+  const count = () => page.evaluate(() => {
+    const controls = window as unknown as { __starterFixture: { taskObservationCount(): number } };
+    return controls.__starterFixture.taskObservationCount();
+  });
+  expect(await count()).toBe(2);
+
+  await details.getByRole('button', { name: 'Edit title', exact: true }).click();
+  await page.getByLabel('Task title', { exact: true }).fill('Retained draft');
+  await page.getByRole('button', { name: 'More tasks', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Complete Beyond the first page', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Task title', { exact: true })).toHaveValue('Retained draft');
+  expect(await count()).toBe(2);
+  await details.getByRole('button', { name: 'Save title', exact: true }).click();
+  await expect(details).toContainText('Retained draft · To do');
+});
+
+test('retries the selected-record fallback independently of the list', async ({ page }) => {
+  await page.goto(`${fixture}?seed&full-project&selected-read-error`);
+  await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
+  await page.getByLabel('New task', { exact: true }).fill('Retry the selected task');
+  await page.getByRole('button', { name: 'Add task', exact: true }).click();
+  const details = page.getByRole('region', { name: 'Task details', exact: true });
+  await expect(details.getByRole('alert')).toContainText('Couldn’t load the task.');
+  await details.getByRole('button', { name: 'Retry task', exact: true }).click();
+  await expect(details).toContainText('Retry the selected task · To do');
+  await expect(details.getByRole('alert')).toHaveCount(0);
+});
+
+test('keeps reopened details when an earlier panel finishes deleting the same task', async ({ page }) => {
+  await page.goto(`${fixture}?seed&defer-save`);
+  await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByRole('button', { name: 'First project', exact: true }).click();
+  await page.getByRole('button', { name: 'Open task First task', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete task', exact: true }).click();
+  await page.getByRole('button', { name: 'Close details', exact: true }).click();
+  await page.getByRole('button', { name: 'Open task First task', exact: true }).click();
+  const details = page.getByRole('region', { name: 'Task details', exact: true });
+  await expect(details).toContainText('First task · To do');
+  await page.evaluate(() => {
+    const controls = window as unknown as { __starterFixture: { finishSave(): void } };
+    controls.__starterFixture.finishSave();
+  });
+  await expect(details).toBeVisible();
+  await expect(details).toContainText('This task is no longer available.');
+  await expect(page.getByRole('checkbox', { name: 'Complete First task', exact: true })).toHaveCount(0);
+});
+
 test('leaves a declined connection on the connect screen', async ({ page }) => {
   await page.goto(`${fixture}?deny`);
   await page.getByRole('button', { name: 'Connect wallet' }).click();
