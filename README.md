@@ -94,10 +94,13 @@ export function Notes() {
 }
 ```
 
-`useFeature` resolves one store instance for the current authorization scope.
-`useStore(resource, selector?, isEqual?)` subscribes to immutable snapshots and
-retains resources only after React commits. Equivalent collection selections
-share native views and command progress across components and headless code.
+`useFeature` resolves one store instance for the current native session and
+Enbox facade. `useStore(resource, selector?, isEqual?)` reads cached immutable
+snapshots and retains resources only after React commits. A snapshot is the
+current observable value, not a copy made by the hook. Selectors receive live
+and server snapshots; equality defaults to `Object.is` on the selected result.
+Equivalent collection selections share native views and command progress across
+components and headless code.
 Nested paths expose keyed families such as `feature.pages.within(notebookContextId)`.
 The starter's detail panel reuses loaded list rows and opens a bounded record
 selection when the chosen task is outside the retained list window.

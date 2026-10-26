@@ -24,7 +24,13 @@ export type EnboxProviderProps = CommonProps & (
   | { config: CreateEnboxClientOptions; client?: never; application?: never }
 );
 
-/** Creates and disposes a client from config, or reuses a client whose disposal stays with its caller. */
+/**
+ * Expose an application runtime or native connection to React.
+ * Supplied applications and clients stay caller-owned; the config form owns its
+ * constructed client. Initialization starts after mount unless disabled with
+ * initializeOnMount. Unmounting releases React consumers and never disposes a
+ * supplied application or client.
+ */
 export function EnboxProvider(props: EnboxProviderProps): ReactNode {
   if (props.application !== undefined) return <ApplicationProvider {...props} application={props.application} />;
   if (props.client !== undefined) return <ExistingClientProvider {...props} client={props.client} />;
@@ -32,7 +38,6 @@ export function EnboxProvider(props: EnboxProviderProps): ReactNode {
   throw new TypeError('EnboxProvider requires an application, client, or config.');
 }
 
-/** The application owner disposes its runtime; the provider only initializes it. */
 function ApplicationProvider({ application, initializeOnMount = true, ...props }: CommonProps & {
   application: ApplicationRuntime;
 }) {
@@ -130,7 +135,12 @@ export function useProviderContext(): ProviderContext {
 /** Returns the native client for advanced SDK actions. */
 export function useEnboxClient(): ConnectionStore { return useProviderContext().client; }
 
-/** Returns the same application runtime used by headless controllers. */
+/**
+ * Borrow the runtime supplied through EnboxProvider's application prop.
+ * The returned instance is shared with headless controllers; this hook neither
+ * initializes nor disposes it.
+ * @throws When the provider has no application runtime.
+ */
 export function useApplication(): ApplicationRuntime {
   const application = useProviderContext().application;
   if (application === undefined) throw new Error('useApplication and useFeature require an EnboxProvider with an application.');

@@ -3,15 +3,28 @@
 import { useCallback } from 'react';
 import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
 
-/** Observable resources and commands provide snapshots; retention starts committed work. */
+/**
+ * React's read/subscription boundary for an observable store, resource, or command.
+ * A snapshot is a published state value; reading it does not create a copy.
+ */
 export type StoreSource<Snapshot> = Readonly<{
+  /** Read the same cached value until the source publishes a change. */
   getSnapshot(): Snapshot;
+  /** Read the deterministic value shared by server rendering and initial hydration. */
   getServerSnapshot(): Snapshot;
+  /** Listen for publications and return the function that removes this listener. */
   subscribe(notify: () => void): () => void;
+  /** Keep a resource active until the returned release function runs. */
   retain?(): () => void;
 }>;
 
-/** Subscribe to an application store, resource, or command without owning its runtime. */
+/**
+ * Read a snapshot or selected value while borrowing the source's lifetime.
+ * Subscriptions and optional leases start after commit and release on cleanup;
+ * rendering only reads cached values. Selectors receive live and server
+ * snapshots, and selected values are compared with Object.is unless isEqual is
+ * supplied. The application owner remains responsible for runtime disposal.
+ */
 export function useStore<Snapshot>(store: StoreSource<Snapshot>): Snapshot;
 export function useStore<Snapshot, Selection>(
   store: StoreSource<Snapshot>,
