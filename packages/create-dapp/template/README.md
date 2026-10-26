@@ -56,18 +56,12 @@ The removable demo lives entirely in `src/demo`:
   payload validators. Tasks store a title and completion state.
 - `use-task-board.ts` defines `useProjects`, `useTasks`, and `useTask` with
   `useEnboxRecords` and `useEnboxRecord`. A child selection takes its direct
-  parent context ID; task details also select an exact record ID. Selection IDs
-  live in React state, and separate detail panels can select different tasks.
+  parent context ID; task details also select an exact record ID. Selected IDs
+  and drafts live in React state; no resource registration is required.
 - `TaskBoard.tsx` renders the board and calls typed create, patch, and delete commands.
   Simple event handlers use `mutate`. Forms await `mutateAsync` and check
   `isCurrent()` before clearing drafts or closing details. Native observation updates the displayed data.
 - `demo.css` styles the demo. Shared app and profile styles live in `src/style.css`.
-
-If an imperative controller must share a view with React, create an explicit
-`createRecordsStore({ client, protocol, path, options, signal })` owner and pass
-it to `useEnboxRecords(store)`. `createRecordStore` and `useEnboxRecord` provide
-the corresponding single-record form. The owner exposes native Promise CRUD;
-React adds pending/error presentation. No resource registry is required.
 
 To replace the demo, register your own typed application protocol in
 `application.ts` in place of `TaskBoardProtocol`. Then delete `src/demo` and remove

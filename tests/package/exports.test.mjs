@@ -42,16 +42,13 @@ test('the built package imports without browser globals and leaves client startu
     application: config.defineApplicationManifest({ protocols: [protocol] }),
   });
   const records = config.createRecordStore(async () => { throw new Error('Construction must stay inert.'); });
-  const typedRecords = config.createRecordsStore({ client, protocol, path: 'note' });
   const contexts = config.createContextStore(async () => { throw new Error('Construction must stay inert.'); });
   try {
     assert.equal(client.getSnapshot().phase, 'initializing');
     assert.equal(records.getSnapshot().status, 'loading');
     assert.equal(contexts.getSnapshot().status, 'loading');
-    assert.equal(typedRecords.getSnapshot().status, 'idle');
   } finally {
     await contexts.close();
-    await typedRecords.close();
     await records.close();
     await client.dispose();
   }

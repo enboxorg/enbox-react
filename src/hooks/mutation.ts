@@ -1,6 +1,6 @@
 'use client';
 
-import type { ConnectionStore, Enbox } from '@enbox/browser';
+import type { Enbox } from '@enbox/browser';
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
@@ -34,15 +34,6 @@ export function useEnboxMutation<Variables = void, Result = unknown>(
   options: EnboxMutationOptions = {},
 ): EnboxMutationResult<Variables, Result> {
   const client = useEnboxClient();
-  return useClientMutation(client, operation, options);
-}
-
-/** The same mutation presentation for provider calls and borrowed record owners. */
-export function useClientMutation<Variables = void, Result = unknown>(
-  client: ConnectionStore,
-  operation: EnboxMutation<Variables, Result>,
-  options: EnboxMutationOptions = {},
-): EnboxMutationResult<Variables, Result> {
   const binding = useConnectionStore(client, selectConnectionBinding, sameConnectionBinding);
   const observer = useMemo(
     () => new EnboxMutationObserver<Variables>(client, binding),

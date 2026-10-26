@@ -5,7 +5,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
-import { EnboxBindingChangedError, EnboxProvider, useEnboxRecord } from '../src/index.js';
+import { EnboxBindingChangedError, EnboxProvider, useEnboxRecord, useEnboxRecords } from '../src/index.js';
 import { controlledClient } from './helpers.js';
 
 // The Node-only DWN harness needs one binary realm and a standards-complete Blob.
@@ -90,6 +90,45 @@ describe('singleton commands with a real encrypted DWN', () => {
 });
 
 describe('explicit record commands with a real encrypted DWN', () => {
+  it('observes native controller writes in independent list and detail queries', async () => {
+    const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [protocol] }) });
+    try {
+      const records = context.enbox.using(protocol).records;
+      const parent = await records.create('project', { data: { name: 'Project' } });
+      const first = await records.create('project/note', {
+        parentContextId: parent.contextId, data: { title: 'In the list', done: false },
+      });
+      const second = await records.create('project/note', {
+        parentContextId: parent.contextId, data: { title: 'Detail only', done: false },
+      });
+      const { client } = controlledClient({ phase: 'connected', enbox: context.enbox, session: context.session });
+      const hook = renderHook(() => ({
+        list: useEnboxRecords(protocol, 'project/note', {
+          within: parent.contextId, filter: { recordId: first.id }, pagination: { limit: 1 },
+        }),
+        detail: useEnboxRecord(protocol, 'project/note', { within: parent.contextId, recordId: second.id }),
+      }), { wrapper: ({ children }) => <EnboxProvider client={client} initializeOnMount={false}>{children}</EnboxProvider> });
+      try {
+        await waitFor(() => expect(hook.result.current.list.records.map((row) => row.id)).toEqual([first.id]));
+        await waitFor(() => expect(hook.result.current.detail.data?.title).toBe('Detail only'));
+        await act(async () => {
+          const updated = await records.patch('project/note', second.id, { done: true });
+          expect(updated.encryption).toBeDefined();
+        });
+        await waitFor(() => expect(hook.result.current.detail.data?.done).toBe(true));
+        expect(hook.result.current.list.records.map((row) => row.id)).toEqual([first.id]);
+        await act(async () => {
+          const created = await hook.result.current.list.create.mutateAsync({ title: 'Created through React', done: false });
+          expect(created.encryption).toBeDefined();
+          expect(await (await records.read('project/note', created.id))!.value()).toEqual({ title: 'Created through React', done: false });
+          await records.delete('project/note', { recordId: second.id, within: parent.contextId });
+        });
+        await waitFor(() => expect(hook.result.current.detail.isMissing).toBe(true));
+        expect(hook.result.current.list.records.map((row) => row.id)).toEqual([first.id]);
+      } finally { await act(async () => { hook.unmount(); }); }
+    } finally { await context.close(); }
+  });
+
   it.each([
     { path: 'note', enabled: true }, { path: 'note', enabled: false },
     { path: 'project/note', enabled: true }, { path: 'project/note', enabled: false },

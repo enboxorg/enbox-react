@@ -4,7 +4,7 @@ import type { RecordStore, RecordStoreOptions } from '../config/record-store.js'
 import { notifyListeners } from './listeners.js';
 import { EnboxBindingChangedError } from '../errors.js';
 import { reportCleanupError } from './errors.js';
-import { RecordViewObserver, type BindingGuard, type RecordViewResult } from './record-view-observer.js';
+import { RecordViewObserver, type RecordViewResult } from './record-view-observer.js';
 
 export type SelectedRecordSnapshot<Item, Selection> = RecordViewResult<Item> & Readonly<{
   selection: Selection | null;
@@ -28,7 +28,6 @@ export type SelectedRecordStore<Item, Selection> = Omit<RecordStore<Item>, 'getS
 
 type SelectionSlot<Item, Selection> = {
   selection: Selection | null;
-  enabled: boolean;
   observer: RecordViewObserver<Item>;
   viewSnapshot: RecordViewResult<Item>;
   serverSnapshot: SelectedRecordSnapshot<Item, Selection>;
@@ -36,12 +35,6 @@ type SelectionSlot<Item, Selection> = {
   observerOpening?: Promise<void>;
   unsubscribe?: () => void;
 };
-
-type SelectedRecordsOptions<Selection> = Readonly<{
-  bindingGuard?: BindingGuard;
-  retainWithoutSubscribers?: boolean;
-  enabled?(selection: Selection): boolean;
-}>;
 
 /** A stable owner; native lifetime and pagination remain in RecordViewObserver. */
 export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Item, Selection> {
@@ -51,12 +44,8 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   private currentSlot: SelectionSlot<Item, Selection>;
   private snapshot: SelectedRecordSnapshot<Item, Selection>;
   private closed = false;
-  private unsubscribeBinding: (() => void) | undefined;
 
-  public constructor(
-    private readonly config: SelectedRecordStoreConfig<Item, Selection>,
-    private readonly options: SelectedRecordsOptions<Selection> = {},
-  ) {
+  public constructor(private readonly config: SelectedRecordStoreConfig<Item, Selection>) {
     this.currentSlot = this.createSlot(config.selection);
     this.snapshot = this.createSnapshot(this.currentSlot);
     this.idle = Object.freeze({ ...new RecordViewObserver<Item>(null).getSnapshot(), selection: null });
@@ -65,20 +54,17 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   }
 
   public readonly getSnapshot = (): SelectedRecordSnapshot<Item, Selection> =>
-    this.isOpen() ? this.snapshot : this.idle;
+    this.closed || this.config.signal?.aborted ? this.idle : this.snapshot;
 
   public readonly getServerSnapshot = (): SelectedRecordSnapshot<Item, Selection> =>
-    this.isOpen() ? this.currentSlot.serverSnapshot : this.idle;
+    this.closed || this.config.signal?.aborted ? this.idle : this.currentSlot.serverSnapshot;
 
   public readonly subscribe = (notify: () => void): (() => void) => {
     if (!this.isOpen()) return () => {};
     const listener = (): void => { notify(); };
     this.listeners.add(listener);
     void this.activate(this.currentSlot).catch(() => {});
-    return () => {
-      if (!this.listeners.delete(listener)) return;
-      if (this.listeners.size === 0 && this.options.retainWithoutSubscribers === false) this.pause();
-    };
+    return () => { this.listeners.delete(listener); };
   };
 
   public readonly select = (selection: Selection | null): Promise<void> => {
@@ -100,7 +86,7 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   > => {
     if (options.signal?.aborted) return Promise.reject(options.signal.reason ?? new EnboxBindingChangedError());
     const slot = this.currentSlot;
-    if (!this.isOpen() || !slot.enabled) return Promise.reject(new EnboxBindingChangedError());
+    if (!this.isOpen() || slot.selection === null) return Promise.reject(new EnboxBindingChangedError());
     void this.activate(slot).catch(() => {});
     return slot.observer.ready(options).then((state) => {
       if (this.currentSlot !== slot || !this.isOpen()) throw new EnboxBindingChangedError();
@@ -125,12 +111,8 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
     if (!this.closed) {
       this.closed = true;
       this.config.signal?.removeEventListener('abort', this.onAbort);
-      const unsubscribeBinding = this.unsubscribeBinding;
-      this.unsubscribeBinding = undefined;
       this.snapshot = this.idle;
       this.releaseSlot(this.currentSlot);
-      this.currentSlot.viewSnapshot = this.currentSlot.observer.getSnapshot();
-      try { unsubscribeBinding?.(); } catch (cause) { reportCleanupError(cause); }
       this.notify();
       this.listeners.clear();
     }
@@ -138,19 +120,16 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   };
 
   private readonly onAbort = (): void => { void this.close(); };
-  private isOpen(): boolean {
-    return !this.closed && this.config.signal?.aborted !== true && (this.options.bindingGuard?.isCurrent() ?? true);
-  }
+  private isOpen(): boolean { return !this.closed && this.config.signal?.aborted !== true; }
 
   private createSlot(selection: Selection | null): SelectionSlot<Item, Selection> {
-    const enabled = selection !== null && (this.options.enabled?.(selection) ?? true);
-    const open = selection === null || !enabled ? null : (signal: AbortSignal) => this.config.open(selection, signal);
+    const open = selection === null ? null : (signal: AbortSignal) => this.config.open(selection, signal);
     const observer = new RecordViewObserver<Item>(open, {
-      retainWithoutSubscribers: this.options.retainWithoutSubscribers ?? true,
+      retainWithoutSubscribers: true,
       loadAll: this.config.loadAll === true,
     });
     const slot: SelectionSlot<Item, Selection> = {
-      selection, enabled, observer, viewSnapshot: observer.getSnapshot(),
+      selection, observer, viewSnapshot: observer.getSnapshot(),
       serverSnapshot: Object.freeze({ ...observer.getServerSnapshot(), selection }),
     };
     // Retained snapshots must retry their own selection, never a replacement.
@@ -164,9 +143,7 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
 
   private activate(slot: SelectionSlot<Item, Selection>): Promise<void> {
     if (!this.isOpen() || this.currentSlot !== slot) return Promise.reject(new EnboxBindingChangedError());
-    this.observeBinding();
-    if (!this.isOpen()) return Promise.reject(new EnboxBindingChangedError());
-    if (!slot.enabled) return Promise.resolve();
+    if (slot.selection === null) return Promise.resolve();
     if (slot.opening !== undefined) return slot.opening;
     const unsubscribe = slot.observer.subscribe(() => {
       if (!this.isOpen() || this.currentSlot !== slot) return;
@@ -185,7 +162,7 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
   }
 
   private retrySlot(slot: SelectionSlot<Item, Selection>): Promise<void> {
-    if (!this.isOpen() || this.currentSlot !== slot || !slot.enabled) return Promise.reject(new EnboxBindingChangedError());
+    if (!this.isOpen() || this.currentSlot !== slot || slot.selection === null) return Promise.reject(new EnboxBindingChangedError());
     if (slot.opening === undefined) return this.activate(slot);
     return this.trackOpening(slot, slot.observer.retry());
   }
@@ -208,33 +185,6 @@ export class SelectedRecords<Item, Selection> implements SelectedRecordStore<Ite
     // Native close can reenter owner.close(), which must include this cleanup.
     this.closingObservers.add(observer);
     void observer.close().catch(reportCleanupError).then(() => { this.closingObservers.delete(observer); });
-  }
-
-  private observeBinding(): void {
-    if (this.unsubscribeBinding !== undefined || this.options.bindingGuard === undefined) return;
-    const unsubscribe = this.options.bindingGuard.subscribe(() => {
-      if (!this.isOpen()) void this.close();
-    });
-    if (this.isOpen()) this.unsubscribeBinding = unsubscribe;
-    else {
-      try { unsubscribe(); } catch (cause) { reportCleanupError(cause); }
-    }
-  }
-
-  private pause(): void {
-    const slot = this.currentSlot;
-    const unsubscribe = slot.unsubscribe;
-    const unsubscribeBinding = this.unsubscribeBinding;
-    this.unsubscribeBinding = undefined;
-    delete slot.unsubscribe;
-    delete slot.opening;
-    delete slot.observerOpening;
-    unsubscribe?.();
-    if (this.currentSlot === slot && this.isOpen()) {
-      slot.viewSnapshot = slot.observer.getSnapshot();
-      this.snapshot = this.createSnapshot(slot);
-    }
-    try { unsubscribeBinding?.(); } catch (cause) { reportCleanupError(cause); }
   }
 
   private notify(): void {

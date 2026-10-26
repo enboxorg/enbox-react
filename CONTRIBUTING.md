@@ -34,17 +34,14 @@ in Enbox. This package owns React subscriptions, rendered connection bindings,
 view lifetimes, and presentation state. See [architecture](docs/architecture.md)
 for those contracts.
 
-The starter is the reference application pattern: typed protocols and thin
-parameterized domain hooks. Applications own selection IDs, drafts, and domain
-rules. List and detail hooks share the SDK's CRUD implementation. Controllers
-that need to share a view with React create an explicit typed owner and pass it
-to the corresponding hook; no registration layer is needed.
+The starter's parameterized domain hooks are the default application pattern.
+Keep selected IDs and drafts in application state. Controllers use native typed
+CRUD; live views propagate those writes to React. Reuse the existing view and
+mutation primitives before introducing another owner, registry, or factory.
 
-When moving generic behavior here, keep its regression coverage here and remove
-duplicate dapp tests. Dapps retain schema/manifest policy, domain operations,
-UI behavior, and focused integration checks for their resource wiring. Do not
-reimplement or retest generic subscription cleanup, image leases, mutation
-progress, or stale session/selection guards already covered by this package.
+Generic lifecycle and mutation regression tests belong here. Dapps retain
+protocol/permission policy, domain rules, UI behavior, and focused wiring tests;
+remove app tests that duplicate behavior delegated to this SDK.
 
 Use explicit domain names, preserve native public types, and keep public
 exports in the two entrypoint files. Prefix hooks with `use`. Distinguish a

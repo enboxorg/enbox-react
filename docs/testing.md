@@ -140,10 +140,8 @@ Close-completion regressions cover plain and selected owners closing reentrantly
 from native unsubscribe, abort, and view-close callbacks. Their promises remain
 pending until the already acquired native view finishes cleanup.
 
-Shared CRUD regressions exercise an explicit controller-owned store borrowed by
-multiple React bindings, native Promise commands, selection replacement,
-session retirement, immutable query arguments, and server rendering without
-reads. Type contracts distinguish collection commands, ID-bound record
-commands, and singleton upserts. The starter's native DWN fixture also exercises
-the controller factories against its actual protocol, including encrypted
-writes, parent fencing, task completion, and codec validation.
+Record-hook regressions cover independent detail selections, server rendering
+without I/O, and Activity teardown. The encrypted DWN integration also proves
+native controller writes update React's list/detail queries directly, including
+a detail record excluded by the list's filter. Dapps should retain their domain
+and UI tests rather than duplicate this SDK's generic lifecycle guarantees.

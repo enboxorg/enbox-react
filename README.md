@@ -58,18 +58,18 @@ version changes are documented in
 | One record by ID, or a schema-declared singleton by path | `useEnboxRecord(protocol, path, options)` |
 | Remote or role-authorized reads, lazy payloads, selected child materialization | `useRecords(protocol, path, options)` |
 | A custom native command, including metadata or file operations | `useEnboxMutation(operation)` |
-| Typed CRUD shared by components and controllers | `createRecordsStore` / `createRecordStore` with the corresponding CRUD hook |
-| An arbitrary native view shared with controllers | `createRecordStore(opener)` with `useRecords(store)` |
+| One view shared by components and controllers | `createRecordStore` with `useRecords(store)` |
 | A selected slice of an existing store | `useObservableStore(store, fallback, selector)` |
 
 Domain hooks such as `useTasks(projectContextId)` and
-`useTask(projectContextId, taskId)` fix paths in one module and receive their
-query arguments directly. Selection IDs belong to application state or routing.
-Each parameterized call owns its view and mutation presentation. To share a
-binding, pass its result through props/context. When controllers and React need
-the same view and native commands, create an explicit typed store for their
-session/page and pass it to the corresponding hook. No resource registration
-or separate selected-record declaration is required.
+`useTask(projectContextId, taskId)` fix protocol paths in one module and take
+query arguments directly. Selection IDs belong to application state or routing;
+list and detail views can select independently. No additional resource
+definitions or registration are required. Each call owns its view and mutation
+state. To share both, call the domain hook once in a parent and pass its result
+through props or context. For a view also used by headless controllers, create a store for the
+owning session/page, pass it through props or context, and close it or abort its
+owner signal when that scope ends. Give shared filters and pagination one owner.
 
 ## Define the application
 
@@ -373,48 +373,17 @@ changes without a polling or cache-invalidation loop.
 
 ## Share records with application controllers
 
-For typed CRUD, create an explicit owner after the client connects:
+Controllers use the native typed SDK directly:
 
-```tsx
-import { createRecordsStore, createRecordStore } from '@enbox/react/config';
-
-const tasks = createRecordsStore({
-  client, protocol: TaskBoardProtocol, path: 'project/task',
-  options: { within: projectContextId }, signal: workspaceLifetime.signal,
-});
-const task = createRecordStore({
-  client, protocol: TaskBoardProtocol, path: 'project/task',
-  options: { within: projectContextId, recordId: taskId },
-  signal: workspaceLifetime.signal,
-});
-
-await tasks.commands.create({ title: 'Created by a controller', completed: false });
-await task.commands.patch({ completed: true });
-
-// Inside React components, borrow these exact owners:
-const list = useEnboxRecords(tasks);
-const detail = useEnboxRecord(task);
+```ts
+const records = enbox.using(TaskBoardProtocol).records;
+await records.patch('project/task', taskId, { completed: true });
 ```
 
-`createRecordsStore` owns a collection; `createRecordStore` with a protocol
-configuration owns one record by ID, or a protocol-declared singleton without
-an ID. Neither requires `kind`. Both expose the same native Promise commands
-used by the React hooks, which add caller-owned pending/error presentation.
-Multiple bindings of the same store share its native view, pagination, and rows.
-They do not open another view or close the owner's view when unmounted.
-Explicit stores work without a provider and capture the current client facade
-and session; replace them with that session and close/abort them when their
-application scope ends. They never retarget another identity.
-
-Construction performs no I/O. Commands can run without opening a view.
-Subscription, `ready()`, or `retry()` activates observation. `select(options)`
-changes an explicit owner's query; use `null` to release it. Query options are
-copied and frozen. Changing a parent or record ID retires captured commands,
-while query-only filters and pagination preserve their target. Collection
-`updateRecords()` is display-only; the next native publication replaces it.
-An ordinary record is observed independently of any list's loaded page or filters.
-
-### Native view adapters
+Native observation updates affected React queries automatically. Controllers
+need no React CRUD wrapper or cache-invalidation step. The hooks add query
+subscription and mutation presentation to the native SDK. Use the existing
+`createRecordStore` only when consumers need to share an explicitly owned view.
 
 When startup, search, or other controllers also read a catalog, create one
 store for that application scope:

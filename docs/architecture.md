@@ -241,27 +241,19 @@ unsaved edits.
 
 ## Local record commands
 
-`useEnboxRecords` and `useEnboxRecord` accept the protocol, path, and query
-arguments directly. Selection IDs belong to application state or routing.
-A parameterized hook owns its view; no definition registration or globally
-selected-record slot is required.
+Domain hooks receive query parameters directly: `useTasks(projectContextId)`
+for a list and `useTask(projectContextId, taskId)` for one record. The application
+owns selected IDs. A record query is independent of a list's filters or loaded
+page. Singletons derive their cardinality from the protocol.
 
-Both hooks bind the same internal typed record owner used by imperative
-controllers. `createRecordsStore({ client, protocol, path, options })` owns a
-collection; `createRecordStore` with the same configuration owns one record by
-ID or a protocol-declared singleton. The hooks can borrow these explicit owners
-without a provider, additional view, or separate write implementation.
+Controllers call the native SDK's typed CRUD methods. The same native
+observation updates React queries when controller writes complete; no separate
+React resource/store framework is needed. Explicit view sharing continues to
+use `createRecordStore` with `useRecords` or `useRecordView`.
 
-The owner composes `SelectedRecords` and `RecordViewObserver` for native view
-lifetime, query changes, readiness, pagination, and teardown. It captures one
-facade/session; construction is inert, replacement masks private data, and
-retired commands cannot target a new session. Explicit owners retain activated
-views until close/abort/retirement. Hook-owned views release with their binding.
-Controller commands return native Promises; React adds the existing mutation
-observer's per-binding progress, errors, and completion guard. Collection
-`updateRecords` remains display-only. Query selections are copied and frozen.
-No additional data cache or state-library dependency is introduced. Collections
-materialize payloads; one-record views use a bounded native selection. Role paths and remote/role
+`useEnboxRecords` and `useEnboxRecord` compose existing query and mutation hooks.
+They own no additional cache or native record lifetime. Collections materialize
+payloads; one-record views use a bounded native selection. Role paths and remote/role
 query options are excluded from these convenience APIs; lower-level hooks
 retain those native capabilities.
 
@@ -308,16 +300,3 @@ available only on a live custom snapshot is not promised during SSR/hydration.
 Owner stores that expose selection metadata in both snapshots retain that field.
 The record hook adds its own pagination control, replacing a same-named custom
 snapshot field in both the runtime result and its type.
-
-## Application and test boundaries
-
-The starter uses `useTasks(projectContextId)` for a collection and
-`useTask(projectContextId, taskId)` for one ordinary record. A detail lookup is
-independent of the list's loaded page and filters. Singleton cardinality comes
-from the protocol. Domain hooks require no separate resource definitions.
-
-This package tests generic ownership, query projection, stale controls,
-mutation presentation, and React lifecycle behavior. Dapps keep protocol and
-permission policy, domain operations, rendering, and editor/recovery semantics.
-When a migration delegates generic behavior here, remove its duplicate app-side
-tests and retain focused integration checks for the application's wiring.

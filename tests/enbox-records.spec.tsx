@@ -2,10 +2,38 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EnboxBindingChangedError, useEnboxRecord, useEnboxRecords } from '../src/index.js';
-import { connected, deferred, facade } from './helpers.js';
+import { connected, ControlledView, deferred, facade } from './helpers.js';
 import { protocol, setup, type Note } from './record-fixture.js';
 
 describe('local record commands', () => {
+  it('keeps parameterized detail views independent when one selected ID changes', async () => {
+    const { api, wrapper } = setup();
+    api.observe.mockImplementation(async (_path, options) => {
+      const { within, filter: { recordId } } = options as { within: string; filter: { recordId: string } };
+      return new ControlledView<{ record: { id: string; contextId: string }; value: Note }>([
+        { record: { id: recordId, contextId: `${within}/${recordId}` }, value: { text: recordId, done: false } },
+      ]);
+    });
+    const first = renderHook(({ id }) => useEnboxRecord(protocol, 'space/note', { within: 'first', recordId: id }), {
+      wrapper, initialProps: { id: 'a' },
+    });
+    const second = renderHook(() => useEnboxRecord(protocol, 'space/note', { within: 'first', recordId: 'b' }), { wrapper });
+    try {
+      await waitFor(() => expect(first.result.current.data?.text).toBe('a'));
+      await waitFor(() => expect(second.result.current.data?.text).toBe('b'));
+      const previous = first.result.current.patch;
+      const unchanged = second.result.current.patch;
+      first.rerender({ id: 'c' });
+      await waitFor(() => expect(first.result.current.data?.text).toBe('c'));
+      expect(second.result.current.data?.text).toBe('b');
+      expect(previous.isCurrent()).toBe(false);
+      expect(unchanged.isCurrent()).toBe(true);
+      await act(async () => { await second.result.current.patch.mutateAsync({ done: true }); });
+      expect(api.patch).toHaveBeenCalledWith('space/note', 'b', { done: true });
+      expect(api.observe).toHaveBeenCalledTimes(3);
+    } finally { first.unmount(); second.unmount(); }
+  });
+
   it('projects native rows and scopes CRUD without copying query filters into writes', async () => {
     const { api, view, wrapper } = setup();
     const hook = renderHook(() => useEnboxRecords(protocol, 'space/note', {
