@@ -1,14 +1,14 @@
 import { BrowserConnectHandler, createApplication, createConnectionStore } from '@enbox/browser';
 
-import { application, wallet } from './application.js';
+import { applicationDefinition, wallet } from './application.js';
 
 let runtime: ReturnType<typeof createApplication> | undefined;
 
 /** One browser-lifetime owner shared by React and application controllers. */
 export function getApplication() {
-  return runtime ??= createApplication(application, {
+  return runtime ??= createApplication(applicationDefinition, {
     connection: createConnectionStore({
-      application: application.manifest,
+      application: applicationDefinition.manifest,
       connectHandler: BrowserConnectHandler(wallet),
     }),
   });

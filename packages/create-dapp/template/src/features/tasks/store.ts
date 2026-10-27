@@ -21,9 +21,9 @@ export const TaskBoardStore = defineStore({
         tasks.within(within).create.run({ title: title.trim(), completed: false }),
       renameTask: ({ within, id, title }: { within: string; id: string; title: string }) =>
         tasks.within(within).patch.run({ id, patch: { title: title.trim() } }),
-      moreProjects: command<void, void>(() => projects.loadMore()),
+      moreProjects: command(() => projects.loadMore()),
       moreTasks: command((within: string) => tasks.within(within).loadMore()),
-      retryProjects: command<void, void>(() => projects.retry()),
+      retryProjects: command(() => projects.retry()),
       retryTasks: command((within: string) => tasks.within(within).retry()),
       retryTask: command(({ within, recordId }: { within: string; recordId: string }) => taskById(within, recordId).retry()),
     };
