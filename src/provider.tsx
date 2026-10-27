@@ -1,6 +1,6 @@
 'use client';
 
-import type { ConnectionStore } from '@enbox/browser';
+import type { ApplicationRuntime, ConnectionStore } from '@enbox/browser';
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -10,6 +10,7 @@ import { ConnectionController, type ConnectionPolicy } from './internal/connecti
 type ProviderContext = ConnectionPolicy & Readonly<{
   client: ConnectionStore;
   controller: ConnectionController;
+  application?: ApplicationRuntime | undefined;
 }>;
 const EnboxContext = createContext<ProviderContext | undefined>(undefined);
 
@@ -18,15 +19,36 @@ type CommonProps = ConnectionPolicy & {
   initializeOnMount?: boolean;
 };
 export type EnboxProviderProps = CommonProps & (
-  | { client: ConnectionStore; config?: never }
-  | { config: CreateEnboxClientOptions; client?: never }
+  | { application: ApplicationRuntime; client?: never; config?: never }
+  | { client: ConnectionStore; config?: never; application?: never }
+  | { config: CreateEnboxClientOptions; client?: never; application?: never }
 );
 
-/** Creates and disposes a client from config, or reuses a client whose disposal stays with its caller. */
+/**
+ * Expose an application runtime or native connection to React.
+ * Supplied applications and clients stay caller-owned; the config form owns its
+ * constructed client. Initialization starts after mount unless disabled with
+ * initializeOnMount. Unmounting releases React consumers and never disposes a
+ * supplied application or client.
+ */
 export function EnboxProvider(props: EnboxProviderProps): ReactNode {
-  return props.client !== undefined
-    ? <ExistingClientProvider {...props} client={props.client} />
-    : <ConfiguredProvider {...props} config={props.config} />;
+  if (props.application !== undefined) return <ApplicationProvider {...props} application={props.application} />;
+  if (props.client !== undefined) return <ExistingClientProvider {...props} client={props.client} />;
+  if (props.config !== undefined) return <ConfiguredProvider {...props} config={props.config} />;
+  throw new TypeError('EnboxProvider requires an application, client, or config.');
+}
+
+function ApplicationProvider({ application, initializeOnMount = true, ...props }: CommonProps & {
+  application: ApplicationRuntime;
+}) {
+  useEffect(() => {
+    if (initializeOnMount) {
+      void application.initialize().catch((cause: unknown) => {
+        console.warn('[@enbox/react] Application initialization failed.', cause);
+      });
+    }
+  }, [application, initializeOnMount]);
+  return <ConnectionContextProvider {...props} application={application} client={application.connection} />;
 }
 
 function initializeClient(client: ConnectionStore): void {
@@ -77,8 +99,9 @@ function ConfiguredProvider({
   return <ConnectionContextProvider {...props} client={scope.client} />;
 }
 
-function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, children }: CommonProps & {
+function ConnectionContextProvider({ client, application, beforeConnect, beforeDisconnect, children }: CommonProps & {
   client: ConnectionStore;
+  application?: ApplicationRuntime;
 }) {
   const [scope, setScope] = useState(() => ({
     client,
@@ -98,8 +121,8 @@ function ConnectionContextProvider({ client, beforeConnect, beforeDisconnect, ch
       });
     };
   }, [controller, scope]);
-  const value = useMemo(() => ({ client, controller, beforeConnect, beforeDisconnect }),
-    [client, controller, beforeConnect, beforeDisconnect]);
+  const value = useMemo(() => ({ client, controller, application, beforeConnect, beforeDisconnect }),
+    [client, controller, application, beforeConnect, beforeDisconnect]);
   return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;
 }
 
@@ -111,6 +134,18 @@ export function useProviderContext(): ProviderContext {
 
 /** Returns the native client for advanced SDK actions. */
 export function useEnboxClient(): ConnectionStore { return useProviderContext().client; }
+
+/**
+ * Borrow the runtime supplied through EnboxProvider's application prop.
+ * The returned instance is shared with headless controllers; this hook neither
+ * initializes nor disposes it.
+ * @throws When the provider has no application runtime.
+ */
+export function useApplication(): ApplicationRuntime {
+  const application = useProviderContext().application;
+  if (application === undefined) throw new Error('useApplication and useFeature require an EnboxProvider with an application.');
+  return application;
+}
 
 export function useOptionalEnboxClient(): ConnectionStore | undefined {
   return useContext(EnboxContext)?.client;

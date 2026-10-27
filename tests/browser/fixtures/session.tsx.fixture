@@ -1,22 +1,25 @@
 import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
-import { AgentSession, ConnectDeniedError } from '@enbox/browser';
+import { ConnectDeniedError, createApplication } from '@enbox/browser';
 import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from '../src/App.js';
-import type { Project, Task } from '../src/demo/protocol.js';
+import { App } from '../src/app/App.js';
+import { applicationDefinition } from '../src/app/application.js';
+import type { Project, Task } from '../src/features/tasks/protocol.js';
 import '../src/style.css';
 
 // Control only the native boundary. The starter uses the actual React SDK.
 const parameters = new URLSearchParams(location.search);
 type Row = { record: { id: string; contextId: string }; value: Project | Task };
+type AgentSession = NonNullable<ConnectionSnapshot['session']>;
 type Entry = Row & { path: string; within: string | undefined };
 const entries = new Map<string, Entry>();
 const views = new Set<FixtureView>();
 let sequence = 0;
 let failRead = parameters.has('read-error');
-let failDetailRead = parameters.has('detail-read-error');
+let failSelectedRead = parameters.has('selected-read-error');
+let taskObservations = 0;
 let failWrite = parameters.has('write-error');
 let finishSave: (() => void) | undefined;
 let needsRepair = parameters.has('repair');
@@ -31,6 +34,11 @@ function create(path: string, data: Row['value'], within?: string): Row['record'
 if (parameters.has('seed')) {
   const project = create('project', { name: 'First project' });
   create('project/task', { title: 'First task', completed: false }, project.contextId);
+  if (parameters.has('full-project')) {
+    for (let index = 2; index <= 20; index++) {
+      create('project/task', { title: `Task ${index}`, completed: false }, project.contextId);
+    }
+  }
 }
 
 class FixtureView implements ExpandableRecordView<Row> {
@@ -58,6 +66,7 @@ class FixtureView implements ExpandableRecordView<Row> {
     return () => { this.listeners.delete(listener); };
   }
   public async ready(): Promise<typeof this.state> { return this.state; }
+  public async refresh(): Promise<typeof this.state> { this.publish(); return this.state; }
   public async close(): Promise<void> { this.listeners.clear(); views.delete(this); }
   public publish(): void {
     this.state = this.snapshot();
@@ -83,10 +92,11 @@ const enbox = {
   using: () => ({ records: {
     observe: async (path: string, options: { within?: string; filter?: { recordId?: string }; pagination: { limit: number }; dateSort?: string }) => {
       if (failRead) { failRead = false; throw new Error('Fixture read failed.'); }
-      if (failDetailRead && options.filter?.recordId !== undefined) {
-        failDetailRead = false;
-        throw new Error('Fixture task read failed.');
+      if (path === 'project/task' && options.filter?.recordId !== undefined && failSelectedRead) {
+        failSelectedRead = false;
+        throw new Error('Fixture selected read failed.');
       }
+      if (path === 'project/task') taskObservations += 1;
       const view = new FixtureView(path, options.within, options.filter?.recordId, options.pagination.limit, options.dateSort === 'createdDescending');
       views.add(view);
       return view;
@@ -131,10 +141,10 @@ const client = {
     if (parameters.has('deny')) return publish({ phase: 'disconnected', error: new ConnectDeniedError() });
     sessionLifetime = new AbortController();
     const did = 'did:example:alice';
-    const session = new AgentSession({
+    const session: AgentSession = {
       agent: {} as AgentSession['agent'], did, signal: sessionLifetime.signal,
       identity: { didUri: did, name: 'Alice' },
-    });
+    };
     const walletReapprovalRequired = needsRepair;
     needsRepair = false;
     return publish({ phase: 'connected', enbox, session, walletReapprovalRequired });
@@ -149,6 +159,7 @@ const client = {
 
 Object.assign(window, { __starterFixture: {
   finishSave: () => finishSave?.(),
+  taskObservationCount: () => taskObservations,
   removeTasks: () => {
     for (const [id, entry] of entries) {
       if (entry.path === 'project/task') entries.delete(id);
@@ -158,5 +169,5 @@ Object.assign(window, { __starterFixture: {
   addProjects: (count: number) => { for (let index = 0; index < count; index++) create('project', { name: `Remote project ${index}` }); },
 } });
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><EnboxProvider client={client}><App /></EnboxProvider></StrictMode>,
+  <StrictMode><EnboxProvider application={createApplication(applicationDefinition, { connection: client })}><App /></EnboxProvider></StrictMode>,
 );

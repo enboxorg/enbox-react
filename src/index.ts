@@ -1,7 +1,10 @@
 'use client';
 
-export { EnboxProvider, useEnboxClient } from './provider.js';
+export { EnboxProvider, useApplication, useEnboxClient } from './provider.js';
 export type { EnboxProviderProps } from './provider.js';
+export { useFeature } from './hooks/feature.js';
+export { useStore } from './hooks/store.js';
+export type { StoreSource } from './hooks/store.js';
 export { useEnboxConnection } from './hooks/enbox-connection.js';
 export type {
   EnboxConnection, EnboxConnectionState, BeforeConnect, BeforeDisconnect,

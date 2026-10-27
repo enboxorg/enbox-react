@@ -1,14 +1,15 @@
 # Enbox React
 
-React bindings for Enbox connections, typed live records, and session-bound
-mutations. The package uses `@enbox/browser`'s connection store and observable
-APIs.
+React subscriptions for Enbox application stores, typed live records, and
+authorization-bound commands. Headless store definitions and resource ownership
+live in `@enbox/api`, also re-exported by `@enbox/browser`.
 
 ## Create a dapp
 
 The `@enbox/create-dapp` generator creates a standalone React application with wallet connection, a public
 profile card, and an encrypted personal task board. The demo lives entirely
-under `src/demo/`; the connection and profile shell can stay as you build.
+under `src/features/tasks/`; application setup lives under `src/app/`, and the
+connection and profile shell can stay as you build.
 
 ```sh
 npm create @enbox/dapp@latest my-app
@@ -46,11 +47,76 @@ Runtime and development dependencies use exact versions; peers accept only
 the explicitly tested releases. Bun defaults to exact saves, frozen lockfile
 installs, and no automatic runtime installs;
 npm also saves exact versions. The current peer pins are `@enbox/browser`
-`0.3.82` and React `18.3.1` or `19.3.0`. Development setup and intentional
+`0.3.83` and React `18.3.1` or `19.3.0`. Development setup and intentional
 version changes are documented in
 [CONTRIBUTING.md](https://github.com/enboxorg/enbox-react/blob/main/CONTRIBUTING.md).
 
-## Choose a record API
+## Application stores
+
+Define protocol resources and domain actions in `features/<feature>/store.ts`:
+
+```ts
+import { defineStore } from '@enbox/browser';
+import { NotesProtocol } from './protocol.js';
+
+export const NotesStore = defineStore({
+  protocols: { notes: NotesProtocol },
+  create({ protocols, command }) {
+    const notes = protocols.notes.collection('note');
+    return {
+      notes,
+      addNote: command((title: string) => notes.create.run({ title: title.trim() })),
+    };
+  },
+});
+```
+
+Register the feature with native `defineApplication({ stores: { notes: NotesStore } })`.
+Use its `manifest` when constructing the native connection, then pass that
+connection to `createApplication(definition, { connection })`. The generated
+`app/application.ts` and `app/runtime.ts` demonstrate this browser-lifetime setup.
+Mount `<EnboxProvider application={runtime}>` to borrow that runtime in React.
+
+```tsx
+import { useFeature, useStore } from '@enbox/react';
+import { NotesStore } from './store.js';
+
+export function Notes() {
+  const feature = useFeature(NotesStore);
+  const notes = useStore(feature.notes);
+  const creation = useStore(feature.addNote);
+  return <>
+    <button disabled={creation.pendingCount > 0}
+      onClick={() => { void feature.addNote.run('Hello'); }}>Add note</button>
+    {creation.error && <p role="alert">{creation.error.message}</p>}
+    {notes.records.map(({ record, value }) => <p key={record.id}>{value.title}</p>)}
+  </>;
+}
+```
+
+`useFeature` resolves one store instance for the current native session and
+Enbox facade. `useStore(resource, selector?, isEqual?)` reads cached immutable
+snapshots and retains resources only after React commits. A snapshot is the
+current observable value, not a copy made by the hook. Selectors receive live
+and server snapshots; equality defaults to `Object.is` on the selected result.
+Equivalent collection selections share native views and command progress across
+components and headless code.
+Nested paths expose keyed families such as `feature.pages.within(notebookContextId)`.
+The starter's detail panel reuses loaded list rows and opens a bounded record
+selection when the chosen task is outside the retained list window.
+
+Headless consumers resolve the same instance with `runtime.store(NotesStore)`.
+They retain resources explicitly, await `ready()`, and release their leases when
+finished. `ready()` alone holds temporary ownership. Session replacement retires
+old feature instances and captured commands. `run()` preserves the native outcome
+and publishes command errors; completion represents local acceptance, while
+replication freshness stays in native snapshots.
+
+The runtime owner calls `dispose()` at application shutdown. The React provider
+initializes a supplied application by default and leaves its disposal to that
+owner. Browser worker preparation still happens before rendering.
+
+## Lower-level record bindings
 
 | Need | API |
 | --- | --- |
@@ -345,8 +411,8 @@ The collection defaults to a page limit of 20; pass `pagination` to change it.
 Promises still reject when awaited, and ignoring them in event handlers is safe.
 Each hook owns its view; use the shared-store APIs below when multiple consumers
 need to share one view. No global private-data cache or state-library dependency
-is introduced. The generated example's `use-task-board.ts` shows this module pattern
-for projects, child tasks, and a selected task’s detail panel.
+is introduced. The generated example instead uses a shared feature store under
+`src/features/tasks/`, with React and headless consumers sharing the same resources.
 
 Use the lower-level `useRecords` and `useEnboxMutation` for remote or
 role-authorized operations, lazy file payloads, custom creates, and other

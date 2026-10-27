@@ -1,0 +1,129 @@
+import { act, render, renderHook } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
+import { Suspense } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useStore } from '../src/hooks/store.js';
+
+type Snapshot = Readonly<{ records: readonly string[]; current: boolean }>;
+
+class Resource {
+  public snapshot: Snapshot = Object.freeze({ records: ['saved'], current: true });
+  public readonly serverSnapshot: Snapshot = Object.freeze({ records: [], current: false });
+  public readonly listeners = new Set<(snapshot: Snapshot) => void>();
+  public retained = 0;
+  public released = 0;
+
+  public getSnapshot(): Snapshot { return this.snapshot; }
+  public getServerSnapshot(): Snapshot { return this.serverSnapshot; }
+  public retain(): () => void {
+    this.retained += 1;
+    return () => { this.released += 1; };
+  }
+  public subscribe(notify: (snapshot: Snapshot) => void): () => void {
+    this.listeners.add(notify);
+    return () => { this.listeners.delete(notify); };
+  }
+  public publish(snapshot: Snapshot): void {
+    this.snapshot = Object.freeze(snapshot);
+    for (const notify of this.listeners) notify(this.snapshot);
+  }
+}
+
+describe('application store subscriptions', () => {
+  it('shares a resource and releases each committed consumer independently', () => {
+    const resource = new Resource();
+    const first = renderHook(() => useStore(resource));
+    const second = renderHook(() => useStore(resource));
+    expect(first.result.current).toBe(resource.getSnapshot());
+    expect(second.result.current).toBe(first.result.current);
+    expect(resource.retained).toBe(2);
+    act(() => resource.publish({ records: ['changed'], current: true }));
+    expect(first.result.current.records).toEqual(['changed']);
+    expect(second.result.current).toBe(first.result.current);
+    first.unmount();
+    expect(resource.released).toBe(1);
+    expect(resource.listeners.size).toBe(1);
+    second.unmount();
+    expect(resource.released).toBe(2);
+    expect(resource.listeners.size).toBe(0);
+  });
+
+  it('selects a slice without rerendering for unrelated publications', () => {
+    const resource = new Resource();
+    let renders = 0;
+    const hook = renderHook(() => {
+      renders += 1;
+      return useStore(resource, (snapshot) => snapshot.records.length);
+    });
+    const initialRenders = renders;
+    act(() => resource.publish({ records: ['saved'], current: false }));
+    expect(renders).toBe(initialRenders);
+    act(() => resource.publish({ records: ['saved', 'new'], current: false }));
+    expect(hook.result.current).toBe(2);
+    expect(renders).toBe(initialRenders + 1);
+    hook.unmount();
+  });
+
+  it('supports custom selector equality and ordinary method receivers', () => {
+    const resource = new Resource();
+    const hook = renderHook(() => useStore(resource,
+      (snapshot) => ({ count: snapshot.records.length }),
+      (previous, next) => previous.count === next.count));
+    const selected = hook.result.current;
+    act(() => resource.publish({ records: ['renamed'], current: false }));
+    expect(hook.result.current).toBe(selected);
+    expect(resource.retained).toBe(1);
+    hook.unmount();
+    expect(resource.released).toBe(1);
+  });
+
+  it('balances resource leases through StrictMode replay', () => {
+    const resource = new Resource();
+    const hook = renderHook(() => useStore(resource), { reactStrictMode: true });
+    expect(resource.retained - resource.released).toBe(1);
+    expect(resource.listeners.size).toBe(1);
+    hook.unmount();
+    expect(resource.retained).toBe(resource.released);
+    expect(resource.listeners.size).toBe(0);
+  });
+
+  it('does not acquire resources from an abandoned render', () => {
+    const resource = new Resource();
+    const pending = new Promise<never>(() => {});
+    function Hidden(): never {
+      useStore(resource);
+      throw pending;
+    }
+    const tree = render(<Suspense fallback={<p>Waiting</p>}><Hidden /></Suspense>);
+    expect(resource.retained).toBe(0);
+    expect(resource.listeners.size).toBe(0);
+    tree.unmount();
+  });
+
+  it('hydrates deterministic server state before acquiring the live resource', async () => {
+    const resource = new Resource();
+    const readLive = vi.spyOn(resource, 'getSnapshot');
+    function Count() { return <output>{useStore(resource, (snapshot) => snapshot.records.length)}</output>; }
+    const html = renderToString(<Count />);
+    expect(html).toContain('0');
+    expect(readLive).not.toHaveBeenCalled();
+    expect(resource.retained).toBe(0);
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = html;
+    const recoverable = vi.fn();
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+      await act(async () => { root = hydrateRoot(container, <Count />, { onRecoverableError: recoverable }); });
+      expect(container.textContent).toBe('1');
+      expect(recoverable).not.toHaveBeenCalled();
+      expect(resource.retained - resource.released).toBe(1);
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+    }
+    expect(resource.retained).toBe(resource.released);
+  });
+});

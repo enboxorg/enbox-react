@@ -1,8 +1,45 @@
 # Architecture
 
-`@enbox/react` adapts Enbox's connection store and observable record views to
-React. Authentication, protocol installation, encryption, persistence, and
-replication run in `@enbox/browser`.
+`@enbox/react` subscribes React components to headless Enbox application stores.
+The SDK owns authentication, protocol installation, encryption, persistence, and
+replication; browser-specific setup stays in `@enbox/browser`.
+
+The default application pattern uses `defineStore`, `defineApplication`, and
+`createApplication` from the platform-neutral API (also re-exported by browser).
+The runtime owns feature instances and native collection views for each
+authorization scope: one exact native session and Enbox facade pair. Replacing
+either retires the scope; sync-status changes keep the same feature instances.
+`EnboxProvider application={runtime}` borrows that owner; `useFeature` resolves
+its current feature instance, and `useStore` subscribes to resource or command
+snapshots. React never creates a second query cache or command engine.
+Connection state and actions stay on `runtime.connection`; the runtime's own
+subscription invalidates feature lookups when their session scope may change.
+
+A **snapshot** is the cached immutable value returned by `getSnapshot`, not a
+copy created on every read. **State** names the value's domain shape:
+`StoreCollectionState` describes collection readiness, and `StoreCommandState`
+describes command progress. `getSnapshot` and `getServerSnapshot`
+keep React's external-store vocabulary; the latter provides the deterministic
+SSR and initial hydration value. A selector reads either value, and `useStore`
+compares the selected result with `Object.is` unless given an equality function.
+
+Store definitions declare static protocol and feature dependencies. Equivalent
+queries within a feature share native observations; parent scopes remain
+independently addressable. Local collection writes refresh canonical native
+views before completing, without application-maintained row overlays. Query
+failures remain query state and do not turn committed writes into failed writes.
+
+The application owner disposes the runtime and its connection. The provider
+initializes the supplied application by default. Resolving a feature opens no
+resources; `useStore` acquires optional leases when its subscription commits and
+releases them on cleanup. An abandoned render acquires no lease. `useFeature`
+observes instance identity directly, so a session abort can replace a feature
+before the native connection publishes another snapshot. Record context IDs
+describe parent data scopes and remain separate from authorization scopes.
+
+This first store integration covers owned metadata collections. Document repair,
+sharing workflows, and their host drain policies continue to use native and
+existing advanced bindings while their resource adapters are extracted.
 
 ## Package entrypoints
 

@@ -289,7 +289,7 @@ describe('owner pagination policy', () => {
     native.publish({ status: 'ready', records: ['saved'], current: true, hasMore: true });
     const store = createRecordStore(async () => ({
       getSnapshot: native.getSnapshot, subscribe: native.subscribe,
-      ready: () => native.ready(), close: native.close,
+      ready: () => native.ready(), refresh: () => native.refresh(), close: native.close,
     }), { loadAll: true });
     const loadMore = vi.spyOn(store, 'loadMore');
     store.subscribe(() => {});
