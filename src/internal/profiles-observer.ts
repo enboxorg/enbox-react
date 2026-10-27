@@ -147,7 +147,6 @@ export class ProfilesObserver {
   }
 
   public readonly getSnapshot = (): ReadonlyMap<string, ProfileResult> => this.snapshot;
-  public readonly getServerSnapshot = (): ReadonlyMap<string, ProfileResult> => this.idleProfiles;
   public readonly subscribe = (notify: () => void): (() => void) => {
     const listener = (): void => { notify(); };
     this.listeners.add(listener);

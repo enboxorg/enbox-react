@@ -1,7 +1,6 @@
 import type { ObservableStore } from '@enbox/browser';
 
 import { act, renderHook } from '@testing-library/react';
-import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useStore } from '../src/index.js';
@@ -40,7 +39,7 @@ describe('borrowed observable stores', () => {
         return () => {};
       },
     };
-    const hook = renderHook(() => useStore(source, { fallback: 0 }));
+    const hook = renderHook(() => useStore(source));
     act(() => { count = 2; notify(); });
     expect(hook.result.current).toBe(2);
   });
@@ -48,9 +47,8 @@ describe('borrowed observable stores', () => {
   it('reads published snapshots with the store receiver and releases only its subscription', () => {
     const first = Object.freeze({ count: 1 });
     const second = Object.freeze({ count: 2 });
-    const fallback = Object.freeze({ count: 0 });
     const store = new TestStore<Readonly<{ count: number }>>(first);
-    const hook = renderHook(() => useStore(store, { fallback: fallback }));
+    const hook = renderHook(() => useStore(store));
     expect(hook.result.current).toBe(first);
     hook.rerender();
     expect(hook.result.current).toBe(first);
@@ -65,7 +63,7 @@ describe('borrowed observable stores', () => {
   it('releases replaced stores and uses the current fallback when no store is supplied', () => {
     const first = new TestStore(1);
     const second = new TestStore(2);
-    const hook = renderHook(({ store, fallback }) => useStore(store, { fallback: fallback }), {
+    const hook = renderHook(({ store, fallback }) => useStore(store, { fallback }), {
       initialProps: { store: first as ObservableStore<number> | null | undefined, fallback: 0 },
     });
     hook.rerender({ store: second, fallback: 0 });
@@ -94,7 +92,7 @@ describe('borrowed observable stores', () => {
     let renders = 0;
     const hook = renderHook(() => {
       renders += 1;
-      return useStore(store, { fallback: 0, selector: (snapshot) => snapshot.count });
+      return useStore(store, { selector: (snapshot) => snapshot.count });
     });
     const initialRenders = renders;
     act(() => store.publish({ count: 1, status: 'refreshing' }));
@@ -163,42 +161,10 @@ describe('borrowed observable stores', () => {
     expect(hook.result.current).toEqual([undefined, 'undefined']);
   });
 
-  it('renders server fallbacks without reading the store or invoking its selector', () => {
-    const store = new TestStore(42);
-    const read = vi.spyOn(store, 'getSnapshot');
-    const subscribe = vi.spyOn(store, 'subscribe');
-    const select = vi.fn((snapshot: number) => `count:${snapshot}`);
-    function Content() {
-      const native = useStore(store, { fallback: 0 });
-      const selected = useStore(store, { fallback: 'server fallback', selector: select });
-      return <output>{native}|{selected}</output>;
-    }
-    expect(renderToString(<Content />)).toContain('0<!-- -->|<!-- -->server fallback');
-    expect(read).not.toHaveBeenCalled();
-    expect(subscribe).not.toHaveBeenCalled();
-    expect(select).not.toHaveBeenCalled();
-  });
-
   it('observes selected updates made while the subscription attaches', () => {
     const store = new TestStore(1);
     store.onSubscribe = () => store.publish(2);
     const hook = renderHook(() => useStore(store, { fallback: 'none', selector: (snapshot) => `count:${snapshot}` }));
     expect(hook.result.current).toBe('count:2');
-  });
-
-  it('prefers a source server snapshot and preserves its ordinary method receiver', () => {
-    class ServerSource extends TestStore<number | undefined> {
-      public readonly serverValue = undefined;
-      public getServerSnapshot(): number | undefined { return this.serverValue; }
-    }
-    const source = new ServerSource(42);
-    const read = vi.spyOn(source, 'getSnapshot');
-    const select = vi.fn((snapshot: number | undefined): string => snapshot === undefined ? 'server' : 'live');
-    function Content() {
-      return <output>{useStore(source, { fallback: 'fallback', selector: select })}</output>;
-    }
-    expect(renderToString(<Content />)).toContain('server');
-    expect(read).not.toHaveBeenCalled();
-    expect(select).toHaveBeenCalledWith(undefined);
   });
 });

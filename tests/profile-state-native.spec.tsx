@@ -1,6 +1,6 @@
 import type { ProfileReaderSource } from '@enbox/browser';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { renderToString } from 'react-dom/server';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { Suspense } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const urls = vi.hoisted(() => ({ acquire: vi.fn(() => ({
@@ -225,21 +225,31 @@ describe('profile state with the native SDK reader', () => {
     await waitFor(() => expect(eager.result.current.status).toBe('settled'));
   });
 
-  it('keeps server rendering inert and backward-compatible eager convenience', async () => {
+  it('does not start profile reads or lease images from an abandoned render', () => {
     const source = { records: {
       query: vi.fn(async () => ({ status: { code: 200 }, records: [profileRecord('Alice')] })),
       read: vi.fn(async () => ({ status: { code: 404 } })),
     } } satisfies ProfileReaderSource;
-    function Shell() {
+    const suspended = new Promise<never>(() => {});
+    function Hidden(): never {
       const state = useProfile(source, 'did:example:alice');
-      return <output>{state.status}:{state.displayName ?? 'empty'}</output>;
+      expect(state.status).toBe('idle');
+      throw suspended;
     }
-    expect(renderToString(<Shell />)).toContain('idle');
+    const tree = render(<Suspense fallback={<p>Waiting</p>}><Hidden /></Suspense>);
     expect(source.records.query).not.toHaveBeenCalled();
     expect(source.records.read).not.toHaveBeenCalled();
     expect(urls.acquire).not.toHaveBeenCalled();
-    const legacy = renderHook(() => useProfile(source, 'did:example:alice'));
-    await waitFor(() => expect(legacy.result.current.displayName).toBe('Alice'));
+    tree.unmount();
+  });
+
+  it('loads profile images eagerly by default after mounting', async () => {
+    const source = { records: {
+      query: vi.fn(async () => ({ status: { code: 200 }, records: [profileRecord('Alice')] })),
+      read: vi.fn(async () => ({ status: { code: 404 } })),
+    } } satisfies ProfileReaderSource;
+    const eager = renderHook(() => useProfile(source, 'did:example:alice'));
+    await waitFor(() => expect(eager.result.current.displayName).toBe('Alice'));
     await waitFor(() => expect(source.records.read).toHaveBeenCalledTimes(2));
   });
 });

@@ -1,6 +1,6 @@
 # @enbox/react
 
-React bindings for Enbox application stores, wallet connections, and profiles.
+Client-side React bindings for Enbox application stores, wallet connections, and profiles.
 Feature resources and commands live in the SDK and work with React, controllers,
 workers, or Node consumers. React reads the same cached state through `useStore`.
 
@@ -144,7 +144,7 @@ performing work instead of caching it across authorization changes.
 
 ## Reading stores
 
-`useStore(source)` reads a source that supplies `getServerSnapshot`. Select a
+`useStore(source)` reads any source with `getSnapshot` and `subscribe`. Select a
 slice with an optional equality function:
 
 ```tsx
@@ -157,8 +157,7 @@ const selected = useStore(feature.notes, {
 });
 ```
 
-Plain observable stores and nullable sources use the same hook with an explicit
-fallback:
+Nullable sources use the same hook with an explicit fallback:
 
 ```tsx
 const notices = useStore(workspace?.notices, { fallback: EMPTY_NOTICES });
@@ -168,15 +167,14 @@ const title = useStore(workspace?.document, {
 });
 ```
 
-A fallback is already selected: absent sources and server rendering without a
-source-provided server snapshot return it without calling the selector. A source's
-own server snapshot takes precedence. Keep fallback values reference-stable.
+A fallback is already selected: absent sources return it without calling the
+selector. Keep fallback values reference-stable.
 A legitimate `undefined` snapshot remains a real value. Store methods retain
 their receiver, and unmount releases only React's subscription.
 
 Snapshots are cached published state values; reading them does not make a copy.
-Selectors use `Object.is` unless `isEqual` is supplied. Rendering and SSR do not
-start observations or acquire leases.
+Selectors use `Object.is` unless `isEqual` is supplied. Rendering does not start
+observations or acquire leases.
 
 ## Commands and UI completion
 

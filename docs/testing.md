@@ -12,10 +12,9 @@ this repository. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup.
 | --- | --- |
 | Application/feature | Borrowed runtime ownership, explicit initialization, shared features, session replacement and early session abort. |
 | Store | Cached reads, receiver binding, subscriber independence, nullable sources, selected fallbacks, selector/equality changes and subscription attachment updates. |
-| Resource borrowing | SDK resource sharing through Strict Mode, Activity and suspended renders; React does not open resources during render or replace committed controls. |
+| Resource borrowing | Client mounting and initial state, SDK resource sharing through Strict Mode, Activity and suspended renders; React does not open resources during render or replace committed controls. |
 | Connection | Guarded wallet/vault/disconnect, pending/error presentation, repair, drain failures, cancellation and retired workflows. |
 | Profiles | Reader sharing, field settlement, image policies, source replacement, URL leases and retired callbacks. |
-| SSR | Deterministic hydration with resource server snapshots and explicit fallbacks; activation follows commit. |
 | Public types | SDK resource and command payloads, nullable/plain source contracts, selected fallbacks, equality and connection/profile options. |
 | Package | Exactly the supported React exports, declarations/client directives, Node import safety and pinned dependencies. |
 | Generator | Canonical template, JSON customization, destination guards, command output and failed-write cleanup. |
@@ -68,8 +67,7 @@ reopened-detail identity guard against an older delete completion.
 Worker checks cover development/production control, updates, cache cleanup,
 ordinary-worker separation and offline shell reload. This does not assert a remote
 write queue or shared-document editing. Wallet approval, vault recovery UX and
-remote delegated replication need application integration runs. Framework-specific
-server-component applications are outside the current fixtures.
+remote delegated replication need application integration runs.
 
 Browser tests have a five-minute global timeout so Playwright writes failure
 reports before CI ends. Provisioning shares the job's fifteen-minute budget.

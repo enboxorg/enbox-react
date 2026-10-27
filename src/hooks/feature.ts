@@ -18,5 +18,5 @@ export function useFeature<Definition extends StoreDefinition>(definition: Defin
   const subscribe = useCallback((notify: () => void) => application.subscribe(notify), [application]);
   // Scope invalidation can precede a connection publication, so observe feature identity directly.
   const getFeature = useCallback(() => application.store(definition), [application, definition]);
-  return useSyncExternalStore(subscribe, getFeature, getFeature);
+  return useSyncExternalStore(subscribe, getFeature);
 }

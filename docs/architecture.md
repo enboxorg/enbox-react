@@ -47,7 +47,7 @@ Feature resources and commands call the full typed native client when a protocol
 collection convenience does not express the needed operation. No second React
 ownership model is needed for these sources.
 
-## React subscriptions and SSR
+## React subscriptions
 
 `useStore` is the sole generic subscription hook. It reads cached snapshots,
 subscribes after commit, and removes its listener during cleanup. It does not add
@@ -55,14 +55,13 @@ an extra retain lease, open a native view, close the source, or dispose the owne
 Strict Mode, Activity, and abandoned renders therefore use the same SDK ownership
 rules as any other subscriber.
 
-Sources may supply `getServerSnapshot`. A plain or nullable observable source
-requires an explicit fallback. That fallback is the selected output and is never
-passed to the selector; it serves absence and SSR when the source has no server
-snapshot. Source-provided server snapshots take precedence. Undefined may be a
-legitimate published value, so an internal sentinel distinguishes absence.
+Plain observable stores use the same hook as SDK resources and commands.
+Nullable sources require an explicit fallback. That fallback is the selected
+output and is never passed to the selector. Undefined may be a legitimate
+published value, so an internal sentinel distinguishes an absent source.
 
 Snapshot means a cached published state value, not a fresh copy. Selectors receive
-native live/server snapshots, equality defaults to `Object.is`, and store methods
+published snapshots, equality defaults to `Object.is`, and store methods
 retain their receiver. `useFeature` separately observes application invalidation
 because session retirement can precede a connection publication.
 

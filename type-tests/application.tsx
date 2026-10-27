@@ -6,7 +6,7 @@ import { EnboxProvider, useApplication, useFeature, useStore } from '@enbox/reac
 type Rows = Readonly<{ records: readonly { title: string }[]; current: boolean }>;
 declare const application: ApplicationRuntime;
 declare const definition: StoreDefinition<Readonly<{ name: string }>>;
-declare const resource: StoreSource<Rows> & { getServerSnapshot(): Rows };
+declare const resource: StoreSource<Rows>;
 declare const selected: StoreResource<RecordViewState<Readonly<{ title: string }>>, string>;
 
 export function ApplicationContract() {

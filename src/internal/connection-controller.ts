@@ -89,7 +89,6 @@ function projectConnectionState(snapshot: ConnectionSnapshot, workflow: Workflow
     remoteDwn: isConnected ? snapshot.remoteDwn : undefined,
   });
 }
-const SERVER_STATE = projectConnectionState({ phase: 'initializing' }, EMPTY_WORKFLOW);
 const RETIRED_STATE = projectConnectionState({ phase: 'disconnected' }, EMPTY_WORKFLOW);
 
 /** Provider-scoped presentation and guards; native client disposal stays with its owner. */
@@ -99,7 +98,7 @@ export class ConnectionController {
   private workflow = EMPTY_WORKFLOW;
   private cachedConnection?: ConnectionSnapshot;
   private cachedWorkflow?: Workflow;
-  private cachedState = SERVER_STATE;
+  private cachedState: EnboxConnectionState | undefined;
   private connectPromise: Promise<void> | undefined;
   private disconnectPromise: Promise<void> | undefined;
   private workflowGeneration = 0;
@@ -136,14 +135,13 @@ export class ConnectionController {
   public readonly getSnapshot = (): EnboxConnectionState => {
     if (this.retired) return RETIRED_STATE;
     const connection = this.client.getSnapshot();
-    if (this.cachedConnection !== connection || this.cachedWorkflow !== this.workflow) {
+    if (this.cachedState === undefined || this.cachedConnection !== connection || this.cachedWorkflow !== this.workflow) {
       this.cachedConnection = connection;
       this.cachedWorkflow = this.workflow;
       this.cachedState = projectConnectionState(connection, this.workflow);
     }
     return this.cachedState;
   };
-  public readonly getServerSnapshot = (): EnboxConnectionState => SERVER_STATE;
   public readonly subscribe = (notify: () => void): (() => void) => {
     if (this.retired) return () => {};
     const listener = (): void => { notify(); };

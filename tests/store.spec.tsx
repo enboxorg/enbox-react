@@ -1,6 +1,4 @@
 import { act, render, renderHook } from '@testing-library/react';
-import { hydrateRoot } from 'react-dom/client';
-import { renderToString } from 'react-dom/server';
 import { Suspense } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -10,13 +8,11 @@ type Snapshot = Readonly<{ records: readonly string[]; current: boolean }>;
 
 class Resource {
   public snapshot: Snapshot = Object.freeze({ records: ['saved'], current: true });
-  public readonly serverSnapshot: Snapshot = Object.freeze({ records: [], current: false });
   public readonly listeners = new Set<(snapshot: Snapshot) => void>();
   public readonly retain = vi.fn(() => () => {});
   public readonly close = vi.fn(async () => {});
 
   public getSnapshot(): Snapshot { return this.snapshot; }
-  public getServerSnapshot(): Snapshot { return this.serverSnapshot; }
   public subscribe(notify: (snapshot: Snapshot) => void): () => void {
     this.listeners.add(notify);
     return () => { this.listeners.delete(notify); };
@@ -91,27 +87,5 @@ describe('application store subscriptions', () => {
     const tree = render(<Suspense fallback={<p>Waiting</p>}><Hidden /></Suspense>);
     expect(resource.listeners.size).toBe(0);
     tree.unmount();
-  });
-
-  it('hydrates deterministic server state before acquiring the live resource', async () => {
-    const resource = new Resource();
-    const readLive = vi.spyOn(resource, 'getSnapshot');
-    function Count() { return <output>{useStore(resource, { selector: (snapshot) => snapshot.records.length })}</output>; }
-    const html = renderToString(<Count />);
-    expect(html).toContain('0');
-    expect(readLive).not.toHaveBeenCalled();
-    const container = document.createElement('div');
-    document.body.append(container);
-    container.innerHTML = html;
-    const recoverable = vi.fn();
-    let root: ReturnType<typeof hydrateRoot> | undefined;
-    try {
-      await act(async () => { root = hydrateRoot(container, <Count />, { onRecoverableError: recoverable }); });
-      expect(container.textContent).toBe('1');
-      expect(recoverable).not.toHaveBeenCalled();
-    } finally {
-      await act(async () => root?.unmount());
-      container.remove();
-    }
   });
 });

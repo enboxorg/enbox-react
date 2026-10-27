@@ -70,7 +70,7 @@ Root development dependencies support only SDK compilation and tests.
 | `vitest`, `@testing-library/react`, `@testing-library/dom`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
 | `@playwright/test` | Production browser tests. |
 | `typescript`, `@types/react`, `@types/use-sync-external-store` | Compilation, declarations, and type contracts. |
-| `react-dom`, `@types/react-dom` | Renderer, SSR, and hydration tests. |
+| `react-dom`, `@types/react-dom` | Client rendering and lifecycle tests. |
 | `@types/node` | Node APIs in tests and tooling configuration. |
 
 The single starter source lives in `packages/create-dapp/template`. Keep its

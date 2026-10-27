@@ -26,7 +26,7 @@ export function useProfiles(
     JSON.parse(didSetKey) as string[],
     images,
   ), [source, didSetKey, enabled, images]);
-  return useSyncExternalStore(observer.subscribe, observer.getSnapshot, observer.getServerSnapshot);
+  return useSyncExternalStore(observer.subscribe, observer.getSnapshot);
 }
 
 const EMPTY_PROFILE = idleProfileResult();

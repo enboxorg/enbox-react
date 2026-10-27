@@ -5,11 +5,10 @@ declare const source: StoreSource<Snapshot>;
 declare const optional: StoreSource<Snapshot> | null | undefined;
 
 export function ObservableStoreContracts(): void {
-  const snapshot: Snapshot = useStore(source, { fallback: { count: 0, label: 'none' } });
-  const selected: number = useStore(source, { fallback: 0, selector: (value) => value.count });
+  const snapshot: Snapshot = useStore(source);
+  const selected: number = useStore(source, { selector: (value) => value.count });
   const label: string = useStore(optional, { fallback: 'none', selector: (value) => value.label });
   const object: Readonly<{ value: number }> = useStore(source, {
-    fallback: { value: 0 },
     selector: (value) => ({ value: value.count }),
     isEqual: (previous, next) => previous.value === next.value,
   });
@@ -22,8 +21,8 @@ export function ObservableStoreContracts(): void {
   void missing;
   void absent;
 
-  // @ts-expect-error a plain store needs an explicit SSR fallback
-  useStore(source);
+  // @ts-expect-error an optional source needs an explicit absent fallback
+  useStore(optional);
   // @ts-expect-error an optional source needs an explicit absent fallback
   useStore(optional, { selector: (value) => value.count });
 
