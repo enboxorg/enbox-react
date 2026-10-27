@@ -19,7 +19,82 @@ const NotesStore = defineStore({
 });
 const definition = defineApplication({ stores: { notes: NotesStore } });
 
+const NotebookProtocol = defineProtocol({
+  protocol: 'https://application-react.test/notebooks', published: false,
+  types: { notebook: { dataFormats: ['application/json'] }, note: { dataFormats: ['application/json'] } },
+  structure: { notebook: { note: {} } },
+} as const, { notebook: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<Note>() });
+const NotebookStore = defineStore({
+  protocols: { notebooks: NotebookProtocol },
+  create({ protocols }) {
+    const notes = protocols.notebooks.collection('notebook/note');
+    return { notes, activeNotes: notes.createSelection() };
+  },
+});
+const notebookDefinition = defineApplication({ stores: { notebooks: NotebookStore } });
+
 describe('native application React integration', () => {
+  it('reads selected parent and rows together and retires the binding with its session', async () => {
+    type Row = { record: { id: string; contextId: string }; value: Note };
+    const views = new Map<string, ControlledView<Row>>();
+    const open = vi.fn(async (_path: string, options: { within: string }) => {
+      const view = new ControlledView<Row>([{
+        record: { id: `${options.within}-note`, contextId: `${options.within}/${options.within}-note` },
+        value: { title: options.within },
+      }]);
+      views.set(options.within, view);
+      return view;
+    });
+    const enbox = facade(vi.fn(() => ({ records: { observe: open } })));
+    const connection = controlledClient(connected(enbox));
+    const application = createApplication(notebookDefinition, { connection: connection.client });
+    const hook = renderHook(() => {
+      const feature = useFeature(NotebookStore);
+      return { feature, state: useStore(feature.activeNotes) };
+    }, {
+      reactStrictMode: true,
+      wrapper: ({ children }) => <EnboxProvider application={application} initializeOnMount={false}>{children}</EnboxProvider>,
+    });
+    let releaseBackground: (() => void) | undefined;
+    try {
+      expect(hook.result.current.state.parentContextId).toBeNull();
+      expect(hook.result.current.state.status).toBe('idle');
+      expect(open).not.toHaveBeenCalled();
+      const firstFeature = hook.result.current.feature;
+      await act(async () => { await firstFeature.activeNotes.select('first'); });
+      expect(hook.result.current.state.parentContextId).toBe('first');
+      expect(hook.result.current.state.records[0]?.value.title).toBe('first');
+      const background = firstFeature.notes.within('first');
+      releaseBackground = background.retain();
+      const backgroundState = await background.ready();
+      expect(hook.result.current.state.records).toBe(backgroundState.records);
+      expect(open).toHaveBeenCalledOnce();
+
+      await act(async () => { await firstFeature.activeNotes.select('second'); });
+      expect(hook.result.current.state.parentContextId).toBe('second');
+      expect(hook.result.current.state.records[0]?.value.title).toBe('second');
+      expect(views.get('first')?.close).not.toHaveBeenCalled();
+      act(() => views.get('first')?.publish({
+        status: 'ready', current: true, hasMore: false,
+        records: [{ record: { id: 'late', contextId: 'first/late' }, value: { title: 'Late first' } }],
+      }));
+      expect(hook.result.current.state.parentContextId).toBe('second');
+      expect(hook.result.current.state.records[0]?.value.title).toBe('second');
+
+      act(() => connection.publish(connected(enbox)));
+      expect(hook.result.current.feature).not.toBe(firstFeature);
+      expect(hook.result.current.state.parentContextId).toBeNull();
+      expect(hook.result.current.state.status).toBe('idle');
+      expect(hook.result.current.state.records).toEqual([]);
+      await expect(firstFeature.activeNotes.select('first')).rejects.toMatchObject({ name: 'StoreRetiredError' });
+      await waitFor(() => expect([...views.values()].every(view => view.close.mock.calls.length === 1)).toBe(true));
+    } finally {
+      releaseBackground?.();
+      hook.unmount();
+      await application.dispose();
+    }
+  });
+
   it('shares one native observation and retires the exact authorization generation', async () => {
     const views: ControlledView<TypedMaterializedRecord<Note>>[] = [];
     const open = vi.fn(async () => {

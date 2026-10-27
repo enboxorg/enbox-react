@@ -1,16 +1,19 @@
+import type { StoreCollectionSelectionState, TypedMaterializedRecord } from '@enbox/browser';
 import { useFeature, useStore } from '@enbox/react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
+import type { Task } from '../protocol.js';
 import { TaskBoardStore } from '../store.js';
 import './tasks.css';
 
 export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const board = useFeature(TaskBoardStore);
   const projects = useStore(board.projects);
+  const activeTasks = useStore(board.activeTasks);
   const creation = useStore(board.createProject);
   const paging = useStore(board.moreProjects);
-  const [projectContextId, setProjectContextId] = useState<string>();
+  const projectContextId = activeTasks.parentContextId;
   const [name, setName] = useState('');
   const creating = creation.pendingCount > 0;
   const prompt = projects.status === 'loading' ? 'Loading projects…'
@@ -20,7 +23,10 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
     event.preventDefault();
     try {
       const record = await board.createProject.run(name);
-      if (board.createProject.isCurrent()) { setProjectContextId(record.contextId); setName(''); }
+      if (board.createProject.isCurrent()) {
+        setName('');
+        await board.selectProject.run(record.contextId);
+      }
     } catch { /* The command exposes the error below. */ }
   }
   return (
@@ -42,21 +48,22 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
       </div>}
       <div className="project-picker" role="group" aria-label="Projects">
         {projects.records.map(({ record, value }) => <button type="button" className="button button-quiet" key={record.id} disabled={disabled}
-          aria-pressed={record.contextId === projectContextId} onClick={() => setProjectContextId(record.contextId)}>{value.name}</button>)}
+          aria-pressed={record.contextId === projectContextId} onClick={() => { void board.selectProject.run(record.contextId); }}>{value.name}</button>)}
       </div>
       {projects.hasMore && <button type="button" disabled={disabled || paging.pendingCount > 0}
         onClick={() => { void board.moreProjects.run(); }}>More projects</button>}
-      {projectContextId !== undefined
-        ? <ProjectTasks key={projectContextId} within={projectContextId} disabled={disabled} />
+      {projectContextId !== null
+        ? <ProjectTasks key={projectContextId} within={projectContextId} tasks={activeTasks} disabled={disabled} />
         : <p role="status">{prompt}</p>}
     </section>
   );
 }
 
-function ProjectTasks({ within, disabled }: { within: string; disabled: boolean }) {
+function ProjectTasks({ within, tasks, disabled }: {
+  within: string; tasks: StoreCollectionSelectionState<TypedMaterializedRecord<Task>>; disabled: boolean;
+}) {
   const board = useFeature(TaskBoardStore);
   const resource = board.tasks.within(within);
-  const tasks = useStore(resource);
   const creation = useStore(resource.create);
   const updates = useStore(resource.patch);
   const paging = useStore(board.moreTasks);

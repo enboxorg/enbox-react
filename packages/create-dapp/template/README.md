@@ -77,12 +77,14 @@ The replaceable task feature lives in `src/features/tasks`:
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
 - `store.ts` declares one shared project collection and a task collection scoped
-  with `tasks.within(projectContextId)`. Creation and rename defaults live here.
-  Native resource commands share pending/error state across consumers.
+  with `tasks.within(projectContextId)`. Its `activeTasks` selection owner keeps
+  the chosen project's query live through `selectProject`; parent metadata and
+  rows arrive together. Creation and rename defaults live here. Native resource
+  commands share pending/error state across consumers.
 - `components/TaskBoard.tsx` resolves the feature with `useFeature(TaskBoardStore)`
   and reads resources or commands with `useStore`. Task details reuse loaded list
   rows and acquire a bounded single-record observation for a selection outside
-  the retained window. Input drafts and UI selection remain in React.
+  the retained window. Input drafts and task-detail selection remain in React.
   Awaited handlers check command authorization before applying their UI result.
 - `components/tasks.css` styles the task feature. Shared app and profile styles
   live in `src/style.css`.
@@ -102,6 +104,10 @@ try {
 
 Handles belong to their authorization session. Resolve a fresh feature when
 that session changes. React's `useFeature` handles that replacement automatically.
+`activeTasks` owns its selected query until another project, null, or session
+retirement. Other callers can create independent owners with
+`board.tasks.createSelection({ signal })`; commands remain on canonical
+`tasks.within(parentContextId)` handles.
 
 To replace the task feature, register your own store in `app/application.ts`,
 delete `src/features/tasks`, and change the feature rendered by `app/App.tsx`.

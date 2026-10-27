@@ -8,6 +8,7 @@ export const TaskBoardStore = defineStore({
   create({ protocols, command }) {
     const projects = protocols.board.collection('project', { dateSort: DateSort.CreatedDescending });
     const tasks = protocols.board.collection('project/task');
+    const activeTasks = tasks.createSelection();
     const taskById = (within: string, recordId: string) => protocols.board.collection('project/task', {
       filter: { recordId }, pagination: { limit: 1 },
     }).within(within);
@@ -15,7 +16,9 @@ export const TaskBoardStore = defineStore({
     return {
       projects,
       tasks,
+      activeTasks,
       taskById,
+      selectProject: command((parentContextId: string | null) => activeTasks.select(parentContextId)),
       createProject: command((name: string) => projects.create.run({ name: name.trim() })),
       createTask: ({ within, title }: { within: string; title: string }) =>
         tasks.within(within).create.run({ title: title.trim(), completed: false }),
