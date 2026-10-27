@@ -102,6 +102,11 @@ and server snapshots; equality defaults to `Object.is` on the selected result.
 Equivalent collection selections share native views and command progress across
 components and headless code.
 Nested paths expose keyed families such as `feature.pages.within(notebookContextId)`.
+`family.createSelection()` gives a controller an independent selected parent,
+publishing `parentContextId` with the canonical collection's rows and status.
+Its `select(id)` waits for usable rows and keeps that collection active until
+replacement, clearing, or owner closure. Native `records.observe()` remains
+the underlying live-query mechanism.
 The starter's detail panel reuses loaded list rows and opens a bounded record
 selection when the chosen task is outside the retained list window.
 
@@ -475,8 +480,10 @@ that attempt. The same startup controls apply to `createContextStore` catalogs.
 The protocol overload `useRecords(NotesProtocol, 'note', options)` and the
 opener overload `useRecordView(opener)` own a view for each hook instead.
 
-For a controller that changes its record selection, the same factory can own
-the replacement views and expose the selection in each snapshot:
+For protocol-store parent selection, use `family.createSelection()` from the
+application-store pattern above. It borrows existing canonical collections.
+The lower-level factory below accepts arbitrary selections and an opener,
+and owns the replacement native views it opens:
 
 ```ts
 const notesByLimit = createRecordStore({

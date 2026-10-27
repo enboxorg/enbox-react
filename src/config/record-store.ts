@@ -32,7 +32,10 @@ export function createRecordStore<Item>(
   opener: RecordViewOpener<Item> | null,
   options?: RecordStoreOptions,
 ): RecordStore<Item>;
-/** Create a store with a changeable selection; select() and retry() can also open its view. */
+/**
+ * Own native views from an arbitrary selection and opener; select() and retry() can open the view.
+ * Protocol-store parent selection uses family.createSelection() to borrow canonical collection handles.
+ */
 export function createRecordStore<Item, Selection>(
   config: SelectedRecordStoreConfig<Item, Selection>,
 ): SelectedRecordStore<Item, Selection>;
