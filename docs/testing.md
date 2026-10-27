@@ -12,17 +12,17 @@ this repository. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup.
 | --- | --- |
 | Application/feature | Borrowed runtime ownership, explicit initialization, shared features, session replacement and early session abort. |
 | Store | Cached reads, receiver binding, subscriber independence, nullable sources, selected fallbacks, selector/equality changes and subscription attachment updates. |
-| Resource borrowing | Client mounting and initial state, SDK resource sharing through Strict Mode, Activity and suspended renders; React does not open resources during render or replace committed controls. |
+| Observation borrowing | Client mounting and initial state, SDK observation sharing through Strict Mode, Activity and suspended renders; React does not open observations during render or replace committed controls. |
 | Connection | Guarded wallet/vault/disconnect, pending/error presentation, repair, drain failures, cancellation and retired workflows. |
 | Profiles | Reader sharing, field settlement, image policies, source replacement, URL leases and retired callbacks. |
-| Public types | SDK resource and command payloads, nullable/plain source contracts, selected fallbacks, equality and connection/profile options. |
+| Public types | SDK observation and command payloads, nullable/plain source contracts, selected fallbacks, equality and connection/profile options. |
 | Package | Exactly the supported React exports, declarations/client directives, Node import safety and pinned dependencies. |
 | Generator | Canonical template, JSON customization, destination guards, command output and failed-write cleanup. |
 | Browser | Fresh standalone installs/builds, worker control/update/offline shell, encrypted native protocol fixture and connected task-board behavior. |
 
-Native observation ownership lives in `@enbox/api`. Its resource tests own
+Native observation ownership lives in `@enbox/api`. Its observation tests own
 asynchronous opening, reentrant cleanup, readiness cancellation, stale outcomes,
-pagination, fixed/keyed resources and advanced native data contracts. React tests
+pagination, fixed/changing inputs and advanced native data contracts. React tests
 exercise borrowing through the public SDK boundary. Native context, invitation,
 role, singleton and child-materialization capabilities stay covered in the SDK;
 removing React wrappers must not remove those native capabilities.

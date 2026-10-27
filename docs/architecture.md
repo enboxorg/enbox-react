@@ -1,7 +1,7 @@
 # Architecture
 
 The application runtime owns feature stores and their authorization lifetime.
-The SDK owns resources, native views, query sharing, commands, and cleanup.
+The SDK owns observations, native views, query sharing, commands, and cleanup.
 React borrows those objects and presents their cached state.
 
 ## Application setup
@@ -17,7 +17,7 @@ opts out, and never disposes the supplied runtime. The host awaits `dispose()`
 when the application ends. Connection UI policy stays in the provider so a dapp
 can drain pending work before connect/disconnect without changing native actions.
 
-## Features and resources
+## Features and observations
 
 `defineStore` declares typed protocol and feature dependencies. Its factory runs
 once per application authorization scope and returns inert handles synchronously.
@@ -25,7 +25,7 @@ The application closes them when their exact session or native facade changes.
 Headless controllers and React obtain the same feature through
 `application.store(definition)` and `useFeature(definition)`.
 
-One SDK resource owner handles fixed native observations and keyed observations.
+One SDK implementation handles fixed observations and observations with changing inputs.
 It owns asynchronous opening, cancellation, attachment, cached publications,
 readiness, explicit leases, and cleanup. Protocol collection helpers supply typed
 sources and commands through that same owner. Custom sources preserve native
@@ -34,7 +34,7 @@ or protocol query layer.
 
 Subscriptions acquire observation interest. Headless owners use `retain()` when
 an observation must continue without subscribers; readiness and controls use
-bounded temporary interest. A selected resource owns its chosen source until
+bounded temporary interest. An observation with a selected input owns its chosen source until
 replacement, null, close, or scope retirement. Its selected input and data publish
 atomically, and replacement acquires the new source before releasing the old one.
 Canonical scoped collections remain shared with other consumers. Query handles
@@ -43,7 +43,7 @@ until that scope ends. Descriptor eviction is separate work.
 
 Native queries, remote roles, singleton slots, selected child materialization,
 files, metadata, and context/sharing operations retain their SDK contracts.
-Feature resources and commands call the full typed native client when a protocol
+Feature observations and commands call the full typed native client when a protocol
 collection convenience does not express the needed operation. No second React
 ownership model is needed for these sources.
 
@@ -55,7 +55,7 @@ an extra retain lease, open a native view, close the source, or dispose the owne
 Strict Mode, Activity, and abandoned renders therefore use the same SDK ownership
 rules as any other subscriber.
 
-Plain observable stores use the same hook as SDK resources and commands.
+Plain observable stores use the same hook as SDK observed stores and commands.
 Nullable sources require an explicit fallback. That fallback is the selected
 output and is never passed to the selector. Undefined may be a legitimate
 published value, so an internal sentinel distinguishes an absent source.
@@ -69,7 +69,7 @@ because session retirement can precede a connection publication.
 
 SDK commands own progress, pending inputs, reset, authorization checks, and
 unchanged operation outcomes. React reads command state with `useStore` and calls
-`run` for application work. Resources publish their own read-control progress,
+`run` for application work. Observed stores publish their own read-control progress,
 including record pagination's `isLoadingMore`.
 
 Authorization lifetime differs from an editor or navigation lifetime. Components
@@ -85,7 +85,7 @@ workflows, pending presentation, repair state, and error projection. It borrows 
 application connection; raw native actions remain available on that runtime.
 Browser setup retains wallet identity defaults for per-call wallet overrides.
 Connection policy and product-specific drain/discard behavior are independent of
-resource observation ownership.
+observation ownership.
 
 Profile hooks retain their browser presentation responsibilities: native-reader
 sharing, DID watches, per-field settlement, image policy, cached results, and Blob
@@ -93,6 +93,6 @@ URL leases. They accept explicit sources and work without a provider. Native
 profile reads and Blob URL pooling already come from the SDK. These capabilities
 are distinct from protocol collection ownership.
 
-The create template and notesd follow this same feature/resource/command model.
+The create template and notesd follow this same feature/observation/command model.
 Product navigation, drafts, document orchestration, notices, and display fallbacks
 remain application code.

@@ -1,7 +1,7 @@
 # @enbox/react
 
 Client-side React bindings for Enbox application stores, wallet connections, and profiles.
-Feature resources and commands live in the SDK and work with React, controllers,
+Feature observations and commands live in the SDK and work with React, controllers,
 workers, or Node consumers. React reads the same cached state through `useStore`.
 
 The canonical starter lives in `packages/create-dapp/template`. It uses the same
@@ -29,15 +29,19 @@ const NotesProtocol = defineProtocol({
 
 export const NotesStore = defineStore({
   protocols: { notes: NotesProtocol },
-  create({ protocols, command }) {
+  create({ protocols }) {
     const notes = protocols.notes.collection('note');
     return {
       notes,
-      add: command((title: string) => notes.create.run({ title: title.trim() })),
+      add: (title: string) => notes.create.run({ title: title.trim() }),
     };
   },
 });
 ```
+
+Input helpers reuse collection commands and their progress state. The feature's
+`command` factory gives a domain operation its own shared progress when needed,
+such as coordinating several writes.
 
 Create one application outside React. Its manifest comes from the registered
 features and their dependencies. Browser setup supplies the wallet handler and
@@ -62,7 +66,7 @@ function Notes() {
   const connection = useEnboxConnection();
   const feature = useFeature(NotesStore);
   const notes = useStore(feature.notes);
-  const progress = useStore(feature.add);
+  const progress = useStore(feature.notes.create);
   if (!connection.isConnected) return <>
     <button disabled={connection.isConnecting}
       onClick={() => { void connection.connect().catch(() => {}); }}>
@@ -72,7 +76,7 @@ function Notes() {
   </>;
   return <>
     <button disabled={progress.pendingCount > 0}
-      onClick={() => { void feature.add.run('New note').catch(() => {}); }}>
+      onClick={() => { void feature.add('New note').catch(() => {}); }}>
       Add note
     </button>
     {progress.error && <p role="alert">{progress.error.message}</p>}
@@ -90,23 +94,22 @@ releases subscriptions and connection UI; the application owner calls
 `await application.dispose()` at the end of its lifetime.
 
 `useFeature` follows session/facade replacement. Constructors and snapshot reads
-open no native views. Resource subscriptions keep observations active; the last
+open no native views. Store subscriptions keep observations active; the last
 consumer releases its observation unless a headless owner still retains it.
 
-## One resource owner
+## Shared observations
 
-Fixed observations and selected observations use the same SDK resource owner.
-Protocol collections are a typed convenience over that owner, including scoped
-native commands. Custom native observations use the feature's `resource` factory;
-they preserve their native typed data, such as records or contexts.
+`observe(...)` declares a shared observable store for a native view. Creating it
+is inert; subscriptions or headless controls activate observation. Protocol
+collections use this same implementation and add scoped write commands.
+An `ObservedStore` preserves its native typed data, such as records or contexts.
 
-The task starter declares a keyed resource over canonical scoped collections:
+The task starter declares an observation whose input selects a scoped collection:
 
 ```ts
-create({ protocols, resource }) {
+create({ protocols, observe }) {
   const tasks = protocols.board.collection('project/task');
-  const activeTasks = resource({
-    selection: null,
+  const activeTasks = observe({
     source: (parent: string) => tasks.within(parent),
   });
   return {
@@ -116,13 +119,14 @@ create({ protocols, resource }) {
 }
 ```
 
-The published selection and data change together. Selecting keeps a borrowed
+The observation starts idle with a null selection. The published selection and
+data change together. Selecting keeps a borrowed
 query live until another selection, `null`, close, or owner retirement. Other
-features can declare independent keyed resources without changing the family's
+features can declare independent observations without changing the family's
 canonical handles. Commands stay on `tasks.within(parent)`.
 
-Resources expose readiness, retry, and supported native controls. Record
-pagination progress is part of resource state as `isLoadingMore`; components do
+Observed stores expose readiness, retry, and supported native controls. Record
+pagination progress is part of their state as `isLoadingMore`; components do
 not need commands solely to track a read control. A headless consumer explicitly
 retains an observation when it needs continued updates:
 
@@ -138,7 +142,7 @@ try {
 ```
 
 Advanced native operations remain available through `protocols.notes.native()`
-inside a resource opener or command. The native client retains the SDK's full
+inside an observation opener or command. The native client retains the SDK's full
 query, singleton, file, metadata, context, and sharing contracts. Resolve it when
 performing work instead of caching it across authorization changes.
 
@@ -185,8 +189,8 @@ For example, an older delete completion must not clear a newly opened selection:
 
 ```ts
 const target = selection;
-await feature.remove.run(target.id);
-if (feature.remove.isCurrent()) {
+await feature.notes.delete.run(target.id);
+if (feature.notes.delete.isCurrent()) {
   setSelection((current) => current === target ? undefined : current);
 }
 ```
@@ -219,7 +223,7 @@ choices for the component.
 | `EnboxProvider` | Borrow an application and initialize it after mount. |
 | `useApplication` | Access the shared headless runtime and native connection. |
 | `useFeature` | Resolve a session-owned feature and follow its replacement. |
-| `useStore` | Read a resource, command, or plain observable store. |
+| `useStore` | Read an observed store, command, or plain observable store. |
 | `useEnboxConnection` | Guarded connection actions and UI presentation. |
 | `useProfile`, `useProfiles` | Public profile state and browser image presentation. |
 

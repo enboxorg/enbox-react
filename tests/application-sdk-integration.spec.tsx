@@ -25,9 +25,9 @@ const NotebookProtocol = defineProtocol({
 } as const, { notebook: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<Note>() });
 const NotebookStore = defineStore({
   protocols: { notebooks: NotebookProtocol },
-  create({ protocols, resource }) {
+  create({ protocols, observe }) {
     const notes = protocols.notebooks.collection('notebook/note');
-    return { notes, activeNotes: resource({ selection: null, source: (parent: string) => notes.within(parent) }) };
+    return { notes, activeNotes: observe({ source: (parent: string) => notes.within(parent) }) };
   },
 });
 

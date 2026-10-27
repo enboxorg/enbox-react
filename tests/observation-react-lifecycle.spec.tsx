@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { EnboxProvider, useFeature, useStore } from '../src/index.js';
 import { connected, ControlledView, controlledClient } from './helpers.js';
 
-describe('headless resources in React', () => {
-  it('keeps committed resources and commands while a replacement render is suspended', async () => {
+describe('headless observations in React', () => {
+  it('keeps committed observations and commands while a replacement render is suspended', async () => {
     const firstView = new ControlledView(['A']);
     const firstOpen = vi.fn(async () => firstView);
     const secondOpen = vi.fn(async () => new ControlledView(['B']));
@@ -15,8 +15,8 @@ describe('headless resources in React', () => {
     const secondWrite = vi.fn(async () => 'B');
     const feature = defineStore({
       protocols: {},
-      create: ({ resource, command }) => ({
-        first: resource(firstOpen), second: resource(secondOpen),
+      create: ({ observe, command }) => ({
+        first: observe(firstOpen), second: observe(secondOpen),
         firstWrite: command(firstWrite), secondWrite: command(secondWrite),
       }),
     });

@@ -11,7 +11,7 @@ describe('client application mounting', () => {
     const view = new ControlledView(['saved']);
     const opener = vi.fn(async () => view);
     const feature = defineStore({
-      create: ({ resource, command }) => ({ items: resource(opener), write: command(async () => 'ok') }),
+      create: ({ observe, command }) => ({ items: observe(opener), write: command(async () => 'ok') }),
     });
     const application = createApplication({ stores: { feature }, connection: () => client });
     const store = { getSnapshot: () => 7, subscribe: () => () => {} };

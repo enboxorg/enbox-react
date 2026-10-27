@@ -39,6 +39,10 @@ export function Contract(): React.ReactNode {
   connection.connect({ createIdentity: true });
   const profileName: string | undefined = useProfile(connection.enbox, connection.did).displayName;
   const profile = useProfile(connection.enbox, connection.did, { images: 'lazy' });
+  const disabledProfile = useProfile(connection.enbox, connection.did, { enabled: false });
+  void disabledProfile;
+  // @ts-expect-error profile options have one object form, including enabled
+  useProfile(connection.enbox, connection.did, false);
   const status: 'idle' | 'loading' | 'settled' | 'not-found' | 'error' = profile.status;
   const imageRequest: Promise<void> = profile.loadImages();
   const profiles = useProfiles(connection.enbox, [connection.did ?? ''], { images: 'off' });

@@ -4,7 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App.js';
-import { getApplication } from './app/runtime.js';
+import { getApplication } from './app/application.js';
 import workerPath from './sw.ts?worker&url';
 import './style.css';
 

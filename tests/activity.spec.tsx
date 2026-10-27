@@ -5,7 +5,7 @@ import { Activity, useEffect } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { EnboxBindingChangedError } from '../src/errors.js';
+import { EnboxBindingChangedError } from '../src/internal/errors.js';
 import { EnboxProvider, useEnboxConnection, useFeature, useStore } from '../src/index.js';
 import { applicationFor, connected, controlledClient, ControlledView, deferred } from './helpers.js';
 
@@ -84,7 +84,7 @@ describe('React Activity', () => {
         getSnapshot: () => state, subscribe: () => () => {}, ready: async () => state, close,
       } satisfies ContextView<string>;
     });
-    const feature = defineStore({ protocols: {}, create: ({ resource }) => ({ items: resource(open) }) });
+    const feature = defineStore({ protocols: {}, create: ({ observe }) => ({ items: observe(open) }) });
     const { client } = controlledClient(connected());
     const application = createApplication({ stores: { feature }, connection: () => client });
     function Content() { return <output>{useStore(useFeature(feature).items).status}</output>; }

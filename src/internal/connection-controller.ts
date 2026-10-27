@@ -5,9 +5,7 @@ import type {
 import { BrowserConnectHandler, isConnectDeniedError } from '@enbox/browser';
 
 import { notifyListeners } from './listeners.js';
-import { EnboxBindingChangedError } from '../errors.js';
-import { isConnectionBindingCurrent } from './connection-binding.js';
-import { reportCleanupError, toError } from './errors.js';
+import { EnboxBindingChangedError, reportCleanupError, toError } from './errors.js';
 
 type NativeConnectOptions = NonNullable<Parameters<ConnectionStore['connect']>[0]>;
 type NativeDisconnectOptions = NonNullable<Parameters<ConnectionStore['disconnect']>[0]>;
@@ -37,7 +35,7 @@ export type ConnectionPolicy = Readonly<{
 export type WalletRepairReason = 'expired' | 'revoked' | 'permissions-changed';
 export type WalletRepairState = Readonly<{ reason: WalletRepairReason; status: 'required' | 'waiting' }>;
 
-export function walletRepairReason(state: string | undefined): WalletRepairReason {
+function walletRepairReason(state: string | undefined): WalletRepairReason {
   return state === 'expired' || state === 'revoked' ? state : 'permissions-changed';
 }
 
@@ -90,6 +88,16 @@ function projectConnectionState(snapshot: ConnectionSnapshot, workflow: Workflow
   });
 }
 const RETIRED_STATE = projectConnectionState({ phase: 'disconnected' }, EMPTY_WORKFLOW);
+
+/** Facade/session identity and native session abort jointly fence guarded UI work. */
+function isConnectionBindingCurrent(
+  client: ConnectionStore,
+  expected: Pick<ConnectionSnapshot, 'enbox' | 'session'>,
+): boolean {
+  const current = client.getSnapshot();
+  return current.enbox === expected.enbox && current.session === expected.session
+    && expected.session?.signal.aborted !== true;
+}
 
 /** Provider-scoped presentation and guards; native client disposal stays with its owner. */
 export class ConnectionController {
@@ -276,8 +284,8 @@ export class ConnectionController {
   };
 
   private isAvailable(): boolean {
-    // Standalone controllers need no lease. Once a provider retains one,
-    // actions also require a live lease while deferred retirement is pending.
+    // Child effects can call controls before the provider's first retain effect.
+    // After that first retain, actions need a live lease even before deferred retirement.
     return !this.retired && (this.retentionGeneration === 0 || this.retainCount > 0);
   }
   private assertAvailable(): void {

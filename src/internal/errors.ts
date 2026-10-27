@@ -1,3 +1,11 @@
+/** A captured connection workflow or profile subscription is no longer current. */
+export class EnboxBindingChangedError extends Error {
+  public constructor() {
+    super('The Enbox binding has changed. Use the current connection or profile controls.');
+    this.name = 'EnboxBindingChangedError';
+  }
+}
+
 /** Normalize arbitrary failures even when their coercion or instanceof check throws. */
 export function toError(cause: unknown): Error {
   try {
@@ -10,5 +18,5 @@ export function toError(cause: unknown): Error {
 
 /** Cleanup has no mounted consumer to receive its failure. */
 export function reportCleanupError(cause: unknown): void {
-  console.warn('[@enbox/react] Resource cleanup failed.', cause);
+  console.warn('[@enbox/react] Cleanup failed.', cause);
 }

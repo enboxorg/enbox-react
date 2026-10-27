@@ -117,7 +117,7 @@ test('generates the bundled template with display and npm names kept in JSON', (
   assert.equal(json(join(destination, 'src/app.json')).id, 'my-fantastic-app');
   assert.equal(json(join(destination, 'src/app.json')).name, basename(destination));
   for (const path of ['index.html', 'tsconfig.json', 'vite.config.ts', 'src/main.tsx', 'src/app/App.tsx',
-    'src/app/application.ts', 'src/app/runtime.ts', 'src/features/tasks/protocol.ts', 'src/features/tasks/store.ts',
+    'src/app/application.ts', 'src/features/tasks/protocol.ts', 'src/features/tasks/store.ts',
     'src/features/tasks/components/TaskBoard.tsx', 'src/shared/components/ProfileCard.tsx', '.gitignore']) {
     assert.equal(fs.statSync(join(destination, path)).isFile(), true, path);
   }

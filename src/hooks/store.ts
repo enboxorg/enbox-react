@@ -23,7 +23,7 @@ const noop = (): void => {};
 const NO_SNAPSHOT = Symbol('absent store snapshot');
 
 /**
- * Subscribe after commit without taking ownership of the source. SDK resources
+ * Subscribe after commit without taking ownership of the source. SDK observed stores
  * activate through their subscriptions; headless owners can retain them separately.
  * Reads return cached values, and selected values use Object.is unless overridden.
  * Nullable sources require an explicit fallback for absence.

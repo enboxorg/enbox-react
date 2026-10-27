@@ -2,7 +2,7 @@ import type { ConnectionSnapshot, VaultConnectOptions } from '@enbox/browser';
 import type { PropsWithChildren } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { EnboxBindingChangedError } from '../src/errors.js';
+import { EnboxBindingChangedError } from '../src/internal/errors.js';
 import { EnboxProvider, useEnboxConnection } from '../src/index.js';
 import { ConnectionController } from '../src/internal/connection-controller.js';
 import { applicationFor, connected, controlledClient, deferred, facade } from './helpers.js';
@@ -120,7 +120,7 @@ describe('dapp connection workflow', () => {
       expect(listeners.size).toBe(1);
       releaseReplacement();
       expect(listeners.size).toBe(0);
-      if (throws) expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Resource cleanup failed.', failure);
+      if (throws) expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Cleanup failed.', failure);
       else expect(warn).not.toHaveBeenCalled();
     } finally {
       releaseReplacement();

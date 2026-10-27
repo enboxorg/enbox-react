@@ -47,12 +47,11 @@ The application follows the same feature-store structure as notesd:
 ```text
 src/
   app/
-    application.ts      # feature registration and wallet identity
-    runtime.ts          # one browser-lifetime application owner
+    application.ts      # features, wallet identity, and one application owner
     App.tsx             # connection shell and feature composition
   features/tasks/
     protocol.ts         # typed encrypted records and validation
-    store.ts            # shared resources, commands, and domain defaults
+    store.ts            # shared observations, commands, and domain defaults
     components/         # task board and its styles
   shared/components/
     ProfileCard.tsx
@@ -78,13 +77,13 @@ The replaceable task feature lives in `src/features/tasks`:
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
 - `store.ts` declares one shared project collection and a task collection scoped
-  with `tasks.within(projectContextId)`. Its keyed `activeTasks` resource keeps
+  with `tasks.within(projectContextId)`. Its `activeTasks` observation keeps
   the chosen project's query live through `activeTasks.select`; parent metadata and
-  rows arrive together. Fixed and selected observations use the same SDK resource
-  owner. Creation and rename defaults live here. Commands share pending/error
-  state across consumers; resource state includes pagination progress.
+  rows arrive together. Fixed and selected observations use the same SDK
+  implementation. Creation and rename helpers reuse each collection's commands and their
+  shared pending/error state; observed state includes pagination progress.
 - `components/TaskBoard.tsx` resolves the feature with `useFeature(TaskBoardStore)`
-  and reads resources or commands with `useStore`. Task details reuse loaded list
+  and reads observed data or commands with `useStore`. Task details reuse loaded list
   rows and acquire a bounded single-record observation for a selection outside
   the retained window. Input drafts and task-detail selection remain in React.
   Awaited handlers check command authorization before applying their UI result.
@@ -109,8 +108,8 @@ try {
 Handles belong to their authorization session. Resolve a fresh feature when
 that session changes. React's `useFeature` handles that replacement automatically.
 `activeTasks` owns its selected query until another project, null, or session
-retirement. Other features can declare their own keyed resources through
-`resource({ selection: null, source: (parent: string) => tasks.within(parent) })`;
+retirement. Other features can declare observations with changing inputs through
+`observe({ source: (parent: string) => tasks.within(parent) })`;
 commands remain on canonical `tasks.within(parentContextId)` handles.
 
 To replace the task feature, register your own store in `app/application.ts`,

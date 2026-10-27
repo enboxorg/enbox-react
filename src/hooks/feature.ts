@@ -8,9 +8,9 @@ import { useApplication } from '../provider.js';
 /**
  * Resolve the same session-owned feature instance as application.store(definition).
  * React observes instance replacement when the native session or Enbox facade
- * changes. Read its resource and command state with useStore; resolving the
- * feature alone does not retain or open those resources.
- * Its resources stay idle before a usable connection exists.
+ * changes. Read its observed data and command state with useStore; resolving the
+ * feature alone does not start observations.
+ * Observations stay idle before a usable connection exists.
  * Requires an EnboxProvider.
  */
 export function useFeature<Definition extends StoreDefinition>(definition: Definition): StoreInstance<Definition> {

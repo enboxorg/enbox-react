@@ -24,18 +24,9 @@ export type EnboxProviderProps = ConnectionPolicy & {
  * Initialization starts after mount unless disabled. The application's owner is
  * responsible for disposal; unmount only releases React's subscriptions and UI.
  */
-export function EnboxProvider({ application, initializeOnMount = true, ...props }: EnboxProviderProps): ReactNode {
-  useEffect(() => {
-    if (initializeOnMount) {
-      void application.initialize().catch((cause: unknown) => {
-        console.warn('[@enbox/react] Application initialization failed.', cause);
-      });
-    }
-  }, [application, initializeOnMount]);
-  return <ConnectionContextProvider {...props} application={application} />;
-}
-
-function ConnectionContextProvider({ application, beforeConnect, beforeDisconnect, children }: EnboxProviderProps) {
+export function EnboxProvider({
+  application, initializeOnMount = true, beforeConnect, beforeDisconnect, children,
+}: EnboxProviderProps): ReactNode {
   const [scope, setScope] = useState(() => ({
     application,
     controller: new ConnectionController(application.connection, getApplicationWalletOptions(application)),
@@ -54,6 +45,13 @@ function ConnectionContextProvider({ application, beforeConnect, beforeDisconnec
       });
     };
   }, [controller, scope]);
+  useEffect(() => {
+    if (initializeOnMount) {
+      void application.initialize().catch((cause: unknown) => {
+        console.warn('[@enbox/react] Application initialization failed.', cause);
+      });
+    }
+  }, [application, initializeOnMount]);
   const value = useMemo(() => ({ controller, application, beforeConnect, beforeDisconnect }),
     [controller, application, beforeConnect, beforeDisconnect]);
   return <EnboxContext.Provider value={value}>{children}</EnboxContext.Provider>;
