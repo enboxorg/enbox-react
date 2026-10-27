@@ -60,8 +60,9 @@ src/
   sw.ts
 ```
 
-`defineApplication` derives the protocol manifest from registered stores.
-`getApplication()` creates one headless runtime over a native connection.
+`createApplication` derives the protocol manifest from registered stores and
+constructs the browser connection with the configured wallet identity.
+`getApplication()` keeps one headless runtime for the browser lifetime.
 `main.tsx` waits for worker control before passing that runtime to
 `EnboxProvider application={...}`. The provider initializes the borrowed runtime;
 the application owns its lifetime. Development module replacement disposes it.
@@ -77,15 +78,18 @@ The replaceable task feature lives in `src/features/tasks`:
 - `protocol.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
 - `store.ts` declares one shared project collection and a task collection scoped
-  with `tasks.within(projectContextId)`. Its `activeTasks` selection owner keeps
-  the chosen project's query live through `selectProject`; parent metadata and
-  rows arrive together. Creation and rename defaults live here. Native resource
-  commands share pending/error state across consumers.
+  with `tasks.within(projectContextId)`. Its keyed `activeTasks` resource keeps
+  the chosen project's query live through `activeTasks.select`; parent metadata and
+  rows arrive together. Fixed and selected observations use the same SDK resource
+  owner. Creation and rename defaults live here. Commands share pending/error
+  state across consumers; resource state includes pagination progress.
 - `components/TaskBoard.tsx` resolves the feature with `useFeature(TaskBoardStore)`
   and reads resources or commands with `useStore`. Task details reuse loaded list
   rows and acquire a bounded single-record observation for a selection outside
   the retained window. Input drafts and task-detail selection remain in React.
   Awaited handlers check command authorization before applying their UI result.
+  Reopened task details also use selection identity to reject an older panel’s
+  completion.
 - `components/tasks.css` styles the task feature. Shared app and profile styles
   live in `src/style.css`.
 
@@ -105,9 +109,9 @@ try {
 Handles belong to their authorization session. Resolve a fresh feature when
 that session changes. React's `useFeature` handles that replacement automatically.
 `activeTasks` owns its selected query until another project, null, or session
-retirement. Other callers can create independent owners with
-`board.tasks.createSelection({ signal })`; commands remain on canonical
-`tasks.within(parentContextId)` handles.
+retirement. Other features can declare their own keyed resources through
+`resource({ selection: null, source: (parent: string) => tasks.within(parent) })`;
+commands remain on canonical `tasks.within(parentContextId)` handles.
 
 To replace the task feature, register your own store in `app/application.ts`,
 delete `src/features/tasks`, and change the feature rendered by `app/App.tsx`.

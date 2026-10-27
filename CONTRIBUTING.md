@@ -14,7 +14,7 @@ the template manifest or generating a template lockfile.
 | --- | --- |
 | `bun run build` | Clear generated output and build ESM, declarations, and source maps. |
 | `bun run typecheck` | Build public declarations and check source, type contracts, and tooling configuration. |
-| `bun run test` | Run unit, React, and native local DWN tests. |
+| `bun run test` | Run React and native-reader integration regressions. |
 | `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
 | `bun run audit` | Audit all locked runtime and development dependencies; every advisory fails the check. |
@@ -31,11 +31,11 @@ for fixture boundaries and integration coverage.
 
 Keep native authentication, protocol, persistence, and replication behavior
 in Enbox. This package owns React subscriptions, rendered connection bindings,
-view lifetimes, and presentation state. See [architecture](docs/architecture.md)
+and presentation state. Native view ownership stays in the SDK. See [architecture](docs/architecture.md)
 for those contracts.
 
 Use explicit domain names, preserve native public types, and keep public
-exports in the two entrypoint files. Prefix hooks with `use`. Distinguish a
+exports in the React entrypoint. Prefix hooks with `use`. Distinguish a
 connection binding from a record context: the first identifies the current
 facade/session; `within` identifies a protocol context.
 

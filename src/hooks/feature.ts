@@ -11,7 +11,7 @@ import { useApplication } from '../provider.js';
  * changes. Read its resource and command state with useStore; resolving the
  * feature alone does not retain or open those resources.
  * Its resources stay idle before a usable connection exists.
- * Requires the application form of EnboxProvider.
+ * Requires an EnboxProvider.
  */
 export function useFeature<Definition extends StoreDefinition>(definition: Definition): StoreInstance<Definition> {
   const application = useApplication();

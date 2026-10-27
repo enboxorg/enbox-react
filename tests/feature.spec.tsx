@@ -1,9 +1,9 @@
-import type { ApplicationRuntime, StoreDefinition, StoreInstance } from '@enbox/api';
+import type { ApplicationRuntime, StoreDefinition, StoreInstance } from '@enbox/browser';
 
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { EnboxProvider, useApplication, useEnboxClient, useFeature } from '../src/index.js';
+import { EnboxProvider, useApplication, useFeature } from '../src/index.js';
 import { connected, controlledClient } from './helpers.js';
 
 const definition = {} as StoreDefinition<Readonly<{ name: string }>>;
@@ -14,6 +14,7 @@ function controlledApplication() {
   const listeners = new Set<() => void>();
   let feature = { name: 'first' };
   const application: ApplicationRuntime = {
+    manifest: { protocols: [] },
     connection: client,
     store: <Definition extends StoreDefinition>(_definition: Definition): StoreInstance<Definition> =>
       feature as StoreInstance<Definition>,
@@ -38,7 +39,7 @@ function controlledApplication() {
 describe('application provider and features', () => {
   it('exposes one runtime and its native connection while leaving disposal to the owner', async () => {
     const { application } = controlledApplication();
-    const hook = renderHook(() => ({ application: useApplication(), client: useEnboxClient() }), {
+    const hook = renderHook(() => ({ application: useApplication(), client: useApplication().connection }), {
       reactStrictMode: true,
       wrapper: ({ children }) => <EnboxProvider application={application}>{children}</EnboxProvider>,
     });
@@ -82,9 +83,11 @@ describe('application provider and features', () => {
   });
 
   it('requires an application runtime for feature resolution', () => {
-    const { client } = controlledClient();
-    expect(() => renderHook(() => useFeature(definition), {
-      wrapper: ({ children }) => <EnboxProvider client={client} initializeOnMount={false}>{children}</EnboxProvider>,
-    })).toThrow('require an EnboxProvider with an application');
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => renderHook(() => useFeature(definition))).toThrow('EnboxProvider');
+    } finally {
+      report.mockRestore();
+    }
   });
 });

@@ -1,19 +1,19 @@
-import type { StoreCollectionSelectionState, TypedMaterializedRecord } from '@enbox/browser';
+import type { StoreInstance } from '@enbox/browser';
 import { useFeature, useStore } from '@enbox/react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import type { Task } from '../protocol.js';
 import { TaskBoardStore } from '../store.js';
 import './tasks.css';
+
+type TaskState = ReturnType<StoreInstance<typeof TaskBoardStore>['activeTasks']['getSnapshot']>;
 
 export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const board = useFeature(TaskBoardStore);
   const projects = useStore(board.projects);
   const activeTasks = useStore(board.activeTasks);
   const creation = useStore(board.createProject);
-  const paging = useStore(board.moreProjects);
-  const projectContextId = activeTasks.parentContextId;
+  const projectContextId = activeTasks.selection;
   const [name, setName] = useState('');
   const creating = creation.pendingCount > 0;
   const prompt = projects.status === 'loading' ? 'Loading projects…'
@@ -25,7 +25,7 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
       const record = await board.createProject.run(name);
       if (board.createProject.isCurrent()) {
         setName('');
-        await board.selectProject.run(record.contextId);
+        await board.activeTasks.select(record.contextId);
       }
     } catch { /* The command exposes the error below. */ }
   }
@@ -44,14 +44,14 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
       {creation.error && <p role="alert">Couldn’t create the project: {creation.error.message}</p>}
       {projects.status === 'error' && <div role="alert">
         <p>Couldn’t load projects: {projects.error.message}</p>
-        <button type="button" disabled={disabled} onClick={() => { void board.retryProjects.run(); }}>Try again</button>
+        <button type="button" disabled={disabled} onClick={() => { void board.projects.retry().catch(() => {}); }}>Try again</button>
       </div>}
       <div className="project-picker" role="group" aria-label="Projects">
         {projects.records.map(({ record, value }) => <button type="button" className="button button-quiet" key={record.id} disabled={disabled}
-          aria-pressed={record.contextId === projectContextId} onClick={() => { void board.selectProject.run(record.contextId); }}>{value.name}</button>)}
+          aria-pressed={record.contextId === projectContextId} onClick={() => { void board.activeTasks.select(record.contextId).catch(() => {}); }}>{value.name}</button>)}
       </div>
-      {projects.hasMore && <button type="button" disabled={disabled || paging.pendingCount > 0}
-        onClick={() => { void board.moreProjects.run(); }}>More projects</button>}
+      {projects.hasMore && <button type="button" disabled={disabled || projects.isLoadingMore}
+        onClick={() => { void board.projects.loadMore().catch(() => {}); }}>More projects</button>}
       {projectContextId !== null
         ? <ProjectTasks key={projectContextId} within={projectContextId} tasks={activeTasks} disabled={disabled} />
         : <p role="status">{prompt}</p>}
@@ -60,13 +60,12 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
 }
 
 function ProjectTasks({ within, tasks, disabled }: {
-  within: string; tasks: StoreCollectionSelectionState<TypedMaterializedRecord<Task>>; disabled: boolean;
+  within: string; tasks: TaskState; disabled: boolean;
 }) {
   const board = useFeature(TaskBoardStore);
   const resource = board.tasks.within(within);
   const creation = useStore(resource.create);
   const updates = useStore(resource.patch);
-  const paging = useStore(board.moreTasks);
   const [title, setTitle] = useState('');
   // Reopening the same record creates a new UI target for completion guards.
   const [selection, setSelection] = useState<{ id: string }>();
@@ -89,18 +88,18 @@ function ProjectTasks({ within, tasks, disabled }: {
     {creation.error && <p role="alert">Couldn’t add the task: {creation.error.message}</p>}
     {updates.error && <p role="alert">Couldn’t update the task: {updates.error.message}</p>}
     {tasks.status === 'error' && <p role="alert">Couldn’t load tasks. <button type="button"
-      disabled={disabled} onClick={() => { void board.retryTasks.run(within); }}>Retry tasks</button></p>}
+      disabled={disabled} onClick={() => { void resource.retry().catch(() => {}); }}>Retry tasks</button></p>}
     <ul className="task-list">
-      {tasks.records.map(({ record, value }) => <li key={record.id} data-completed={value.completed}>
+      {(tasks.records ?? []).map(({ record, value }) => <li key={record.id} data-completed={value.completed}>
         <input type="checkbox" aria-label={`Complete ${value.title}`} checked={value.completed}
           disabled={disabled || updates.pendingVariables.some((input) => input.id === record.id)}
-          onChange={(event) => { void resource.patch.run({ id: record.id, patch: { completed: event.currentTarget.checked } }); }} />
+          onChange={(event) => { void resource.patch.run({ id: record.id, patch: { completed: event.currentTarget.checked } }).catch(() => {}); }} />
         <button type="button" className="button button-quiet" aria-label={`Open task ${value.title}`}
           disabled={disabled} aria-pressed={record.id === selection?.id} onClick={() => setSelection({ id: record.id })}>{value.title}</button>
       </li>)}
     </ul>
-    {tasks.hasMore && <button type="button" disabled={disabled || paging.pendingVariables.includes(within)}
-      onClick={() => { void board.moreTasks.run(within); }}>More tasks</button>}
+    {tasks.hasMore && <button type="button" disabled={disabled || tasks.isLoadingMore}
+      onClick={() => { void resource.loadMore().catch(() => {}); }}>More tasks</button>}
     {selection !== undefined
       ? <TaskDetails key={selection.id} within={within} recordId={selection.id} disabled={disabled}
         onClose={() => setSelection((current) => current === selection ? undefined : current)} />
@@ -144,8 +143,7 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
     <h3>Task details</h3>
     {status === 'error' && <p role="alert">Couldn’t load the task. <button type="button"
       disabled={disabled} onClick={() => {
-        if (needsLookup) void board.retryTask.run({ within, recordId });
-        else void board.retryTasks.run(within);
+        void (needsLookup ? board.taskById(within, recordId) : resource).retry().catch(() => {});
       }}>Retry task</button></p>}
     {data === undefined && status === 'loading' && <p role="status">Loading task…</p>}
     {data === undefined && status === 'ready' && <p role="status">This task is no longer available.</p>}

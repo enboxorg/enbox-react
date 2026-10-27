@@ -1,7 +1,7 @@
 {
   "name": "@enbox/react",
   "version": "0.0.8",
-  "description": "React bindings for Enbox wallet connections and typed live records",
+  "description": "React bindings for Enbox application stores and wallet connections",
   "type": "module",
   "license": "Apache-2.0",
   "repository": {
@@ -14,10 +14,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./config": {
-      "types": "./dist/config/index.d.ts",
-      "import": "./dist/config/index.js"
     },
     "./package.json": "./package.json"
   },

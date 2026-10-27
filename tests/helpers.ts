@@ -1,18 +1,9 @@
-import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
+import type { ApplicationRuntime, ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
 
-import { onTestFinished, vi } from 'vitest';
+import { defineApplicationManifest } from '@enbox/browser';
+import { vi } from 'vitest';
 
 type AgentSession = NonNullable<ConnectionSnapshot['session']>;
-
-/** Release manually subscribed observers even when an assertion fails. */
-export function subscribeObserver(
-  observer: { subscribe(notify: () => void): () => void },
-  notify: () => void = () => {},
-): () => void {
-  const unsubscribe = observer.subscribe(notify);
-  onTestFinished(unsubscribe);
-  return unsubscribe;
-}
 
 /** Test doubles model the external-store boundary, not the wallet protocol. */
 export function controlledClient(initial: ConnectionSnapshot = { phase: 'disconnected' }) {
@@ -98,4 +89,23 @@ export class ControlledView<T> implements ExpandableRecordView<T> {
     this._state = Object.freeze(next);
     for (const listener of this.listeners) listener(this._state);
   }
+}
+
+const applications = new WeakMap<ConnectionStore, ApplicationRuntime>();
+
+/** Model only the provider's borrowed application/connection boundary. */
+export function applicationFor(client: ConnectionStore): ApplicationRuntime {
+  let application = applications.get(client);
+  if (application === undefined) {
+    application = {
+      manifest: defineApplicationManifest({ protocols: [] }),
+      connection: client,
+      store: () => { throw new Error('This UI fixture does not resolve features.'); },
+      subscribe: () => () => {},
+      initialize: () => client.initialize(),
+      dispose: () => client.dispose(),
+    };
+    applications.set(client, application);
+  }
+  return application;
 }

@@ -5,11 +5,3 @@ export class EnboxBindingChangedError extends Error {
     this.name = 'EnboxBindingChangedError';
   }
 }
-
-/** An active connection is required before invoking an Enbox mutation. */
-export class EnboxNotConnectedError extends Error {
-  public constructor() {
-    super('Connect to Enbox before running a mutation.');
-    this.name = 'EnboxNotConnectedError';
-  }
-}
