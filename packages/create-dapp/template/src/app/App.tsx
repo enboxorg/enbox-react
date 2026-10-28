@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 import app from '../app.json' with { type: 'json' };
 import { TaskBoard } from '../features/tasks/components/TaskBoard.js';
-import { ProfileCard } from '../shared/components/ProfileCard.js';
+import { ProfileCard } from '../components/ProfileCard.js';
 
 export function App() {
   const connection = useEnboxConnection();

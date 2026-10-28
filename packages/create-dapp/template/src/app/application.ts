@@ -10,9 +10,7 @@ export const applicationOptions = {
 
 let application: ReturnType<typeof createApplication> | undefined;
 
-/** One browser-lifetime owner shared by React and application controllers. */
+/** One application owner for this page, shared by React and application controllers. */
 export function getApplication() {
   return application ??= createApplication(applicationOptions);
 }
-
-if (import.meta.hot) import.meta.hot.dispose(() => { void application?.dispose(); });

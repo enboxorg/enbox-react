@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@enbox/browser": "0.3.84",
-    "@enbox/react": "0.0.9",
+    "@enbox/browser": "0.3.85",
+    "@enbox/react": "0.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

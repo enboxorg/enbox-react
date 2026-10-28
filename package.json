@@ -1,6 +1,6 @@
 {
   "name": "@enbox/react",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "React bindings for Enbox application stores and wallet connections",
   "type": "module",
   "license": "Apache-2.0",
@@ -31,7 +31,7 @@
     "test:react18": "bun run build && node scripts/test-react18.mjs"
   },
   "peerDependencies": {
-    "@enbox/browser": "0.3.84",
+    "@enbox/browser": "0.3.85",
     "react": "18.3.1 || 19.3.0"
   },
   "dependencies": {
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@enbox/api": "0.6.91",
-    "@enbox/browser": "0.3.84",
+    "@enbox/browser": "0.3.85",
     "@playwright/test": "1.58.2",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",

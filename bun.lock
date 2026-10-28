@@ -9,7 +9,7 @@
       },
       "devDependencies": {
         "@enbox/api": "0.6.91",
-        "@enbox/browser": "0.3.84",
+        "@enbox/browser": "0.3.85",
         "@playwright/test": "1.58.2",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
@@ -23,7 +23,7 @@
         "vitest": "4.1.12",
       },
       "peerDependencies": {
-        "@enbox/browser": "0.3.84",
+        "@enbox/browser": "0.3.85",
         "react": "18.3.1 || 19.3.0",
       },
     },
@@ -59,7 +59,7 @@
 
     "@enbox/auth": ["@enbox/auth@0.6.96", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-clients": "0.4.37", "@enbox/dwn-sdk-js": "0.4.29", "level": "8.0.1" } }, "sha512-a2sHoWyO67fv6I1eMO+S+Gg9sgIKCbuPCgwYXcth8AFTfiLsv5tad+fsWx60NESBGEOKScUFBL0UAtGZ3EFD3Q=="],
 
-    "@enbox/browser": ["@enbox/browser@0.3.84", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/api": "0.6.91", "@enbox/auth": "0.6.96", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-sdk-js": "0.4.29", "@enbox/protocols": "0.2.118" } }, "sha512-JJ/0freyjqJS4zyL1EwEQx62ZXegFqTKKl0A9udN1ExzA4hJrLAlrmI9FCJkW8vmbvxZdsXR7D+BitpdVMHT6w=="],
+    "@enbox/browser": ["@enbox/browser@0.3.85", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/api": "0.6.91", "@enbox/auth": "0.6.96", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-sdk-js": "0.4.29", "@enbox/protocols": "0.2.118" } }, "sha512-hoLKln2AHOnaIp1+injvN2AvT/Nb8/Ycw4XxZl48GoJm4GyiwFDsznU63U2ZI+IL2UKqZNz7NGV4E/S5emtcGg=="],
 
     "@enbox/common": ["@enbox/common@0.1.9", "", { "dependencies": { "multiformats": "14.0.3" }, "peerDependencies": { "abstract-level": "1.0.4", "level": "8.0.1" }, "optionalPeers": ["abstract-level", "level"] }, "sha512-yIKqCGNHWp32rwqePkPujJOzt8dsP6CWY0L6vEAYZt3/AyD5v9GfKbyURILnCktXsk4fPar6K9JqXF2cmK8W4A=="],
 

@@ -30,6 +30,11 @@ toolchain. Production builds precache the app shell for
 later offline visits; `npm run preview` serves that built app locally. Deploy
 the generated `dist` directory on an HTTPS origin with service worker support.
 
+This starter explicitly activates worker updates immediately in `src/sw.ts`.
+Apps with an update prompt, such as Notesd, approve activation after pending
+edits are persisted. `prepareBrowser()` waits for the current worker; it does
+not choose an application's update policy.
+
 You can also use `bun install` and `bun run dev`. No lockfile is generated
 until your first install. Commit the resulting `package-lock.json` or `bun.lock`;
 then use `npm ci` or `bun install --frozen-lockfile` in CI. Direct dependencies
@@ -53,7 +58,7 @@ src/
     protocol.ts         # typed encrypted records and validation
     store.ts            # shared observations, commands, and domain defaults
     components/         # task board and its styles
-  shared/components/
+  components/           # reusable UI shared by features
     ProfileCard.tsx
   main.tsx
   sw.ts
@@ -61,10 +66,14 @@ src/
 
 `createApplication` derives the protocol manifest from registered stores and
 constructs the browser connection with the configured wallet identity.
-`getApplication()` keeps one headless runtime for the browser lifetime.
+`getApplication()` keeps one headless runtime for the page lifetime.
 `main.tsx` waits for worker control before passing that runtime to
 `EnboxProvider application={...}`. The provider initializes the borrowed runtime;
-the application owns its lifetime. Development module replacement disposes it.
+the application owns its page lifetime. Component Fast Refresh is useful for UI
+edits, but replacing a connected runtime or its store/protocol definitions is
+not a supported hot-reload operation. Disconnect before changing those files,
+then reload the page. Apps with document writers, such as Notesd, drain edits
+as part of disconnecting.
 
 The profile card reads published profile information through `useProfile`.
 Names, images, settlement state, and image URL lifetimes belong to the SDK.
