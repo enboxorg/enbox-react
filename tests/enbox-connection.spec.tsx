@@ -147,7 +147,7 @@ describe('dapp connection workflow', () => {
     await expect(controller[action](undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
   });
 
-  it.each(connectActions)('retires an existing-client provider guard and rejects its captured controls without disposing the client (%s)', async (action) => {
+  it.each(connectActions)('retires an application provider guard and rejects its captured controls without disposing the client (%s)', async (action) => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();
     const beforeConnect = vi.fn(() => saving.promise);

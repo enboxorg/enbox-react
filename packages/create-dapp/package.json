@@ -1,6 +1,6 @@
 {
   "name": "@enbox/create-dapp",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Create a minimal Enbox React application",
   "type": "module",
   "license": "Apache-2.0",

@@ -1,8 +1,8 @@
 # @enbox/react
 
 Client-side React bindings for Enbox application stores, wallet connections, and profiles.
-Feature observations and commands live in the SDK and work with React, controllers,
-workers, or Node consumers. React reads the same cached state through `useStore`.
+Feature observations and commands live in the SDK and work with React and
+headless application code. React reads the same cached state through `useStore`.
 
 The canonical starter lives in `packages/create-dapp/template`. It uses the same
 feature structure as notesd: application setup, protocol definitions, feature
