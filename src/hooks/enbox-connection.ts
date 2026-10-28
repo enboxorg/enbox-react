@@ -25,7 +25,7 @@ export type EnboxConnection = EnboxConnectionState & Readonly<{
 /** Connection presentation and guarded actions that reject actionable failures. */
 export function useEnboxConnection(): EnboxConnection {
   const { controller, beforeConnect, beforeDisconnect } = useProviderContext();
-  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getServerSnapshot);
+  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const connect = useCallback((options?: ConnectOptions) =>
     controller.connect(options, { beforeConnect }), [controller, beforeConnect]);
   const connectVault = useCallback((options?: VaultConnectOptions) =>

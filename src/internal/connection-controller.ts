@@ -5,9 +5,7 @@ import type {
 import { BrowserConnectHandler, isConnectDeniedError } from '@enbox/browser';
 
 import { notifyListeners } from './listeners.js';
-import { EnboxBindingChangedError } from '../errors.js';
-import { isConnectionBindingCurrent } from './connection-binding.js';
-import { reportCleanupError, toError } from './errors.js';
+import { EnboxBindingChangedError, reportCleanupError, toError } from './errors.js';
 
 type NativeConnectOptions = NonNullable<Parameters<ConnectionStore['connect']>[0]>;
 type NativeDisconnectOptions = NonNullable<Parameters<ConnectionStore['disconnect']>[0]>;
@@ -37,7 +35,7 @@ export type ConnectionPolicy = Readonly<{
 export type WalletRepairReason = 'expired' | 'revoked' | 'permissions-changed';
 export type WalletRepairState = Readonly<{ reason: WalletRepairReason; status: 'required' | 'waiting' }>;
 
-export function walletRepairReason(state: string | undefined): WalletRepairReason {
+function walletRepairReason(state: string | undefined): WalletRepairReason {
   return state === 'expired' || state === 'revoked' ? state : 'permissions-changed';
 }
 
@@ -89,8 +87,17 @@ function projectConnectionState(snapshot: ConnectionSnapshot, workflow: Workflow
     remoteDwn: isConnected ? snapshot.remoteDwn : undefined,
   });
 }
-const SERVER_STATE = projectConnectionState({ phase: 'initializing' }, EMPTY_WORKFLOW);
 const RETIRED_STATE = projectConnectionState({ phase: 'disconnected' }, EMPTY_WORKFLOW);
+
+/** Facade/session identity and native session abort jointly fence guarded UI work. */
+function isConnectionBindingCurrent(
+  client: ConnectionStore,
+  expected: Pick<ConnectionSnapshot, 'enbox' | 'session'>,
+): boolean {
+  const current = client.getSnapshot();
+  return current.enbox === expected.enbox && current.session === expected.session
+    && expected.session?.signal.aborted !== true;
+}
 
 /** Provider-scoped presentation and guards; native client disposal stays with its owner. */
 export class ConnectionController {
@@ -99,7 +106,7 @@ export class ConnectionController {
   private workflow = EMPTY_WORKFLOW;
   private cachedConnection?: ConnectionSnapshot;
   private cachedWorkflow?: Workflow;
-  private cachedState = SERVER_STATE;
+  private cachedState: EnboxConnectionState | undefined;
   private connectPromise: Promise<void> | undefined;
   private disconnectPromise: Promise<void> | undefined;
   private workflowGeneration = 0;
@@ -136,14 +143,13 @@ export class ConnectionController {
   public readonly getSnapshot = (): EnboxConnectionState => {
     if (this.retired) return RETIRED_STATE;
     const connection = this.client.getSnapshot();
-    if (this.cachedConnection !== connection || this.cachedWorkflow !== this.workflow) {
+    if (this.cachedState === undefined || this.cachedConnection !== connection || this.cachedWorkflow !== this.workflow) {
       this.cachedConnection = connection;
       this.cachedWorkflow = this.workflow;
       this.cachedState = projectConnectionState(connection, this.workflow);
     }
     return this.cachedState;
   };
-  public readonly getServerSnapshot = (): EnboxConnectionState => SERVER_STATE;
   public readonly subscribe = (notify: () => void): (() => void) => {
     if (this.retired) return () => {};
     const listener = (): void => { notify(); };
@@ -278,8 +284,8 @@ export class ConnectionController {
   };
 
   private isAvailable(): boolean {
-    // Standalone controllers need no lease. Once a provider retains one,
-    // actions also require a live lease while deferred retirement is pending.
+    // Child effects can call controls before the provider's first retain effect.
+    // After that first retain, actions need a live lease even before deferred retirement.
     return !this.retired && (this.retentionGeneration === 0 || this.retainCount > 0);
   }
   private assertAvailable(): void {

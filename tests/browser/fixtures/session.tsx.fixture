@@ -1,11 +1,12 @@
 import type { ConnectionSnapshot, ConnectionStore, Enbox, ExpandableRecordView, RecordViewState } from '@enbox/browser';
-import { ConnectDeniedError, createApplication } from '@enbox/browser';
+import { ConnectDeniedError } from '@enbox/browser';
+import { createApplication } from '@enbox/browser';
 import { EnboxProvider } from '@enbox/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/app/App.js';
-import { applicationDefinition } from '../src/app/application.js';
+import { applicationOptions } from '../src/app/application.js';
 import type { Project, Task } from '../src/features/tasks/protocol.js';
 import '../src/style.css';
 
@@ -169,5 +170,5 @@ Object.assign(window, { __starterFixture: {
   addProjects: (count: number) => { for (let index = 0; index < count; index++) create('project', { name: `Remote project ${index}` }); },
 } });
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><EnboxProvider application={createApplication(applicationDefinition, { connection: client })}><App /></EnboxProvider></StrictMode>,
+  <StrictMode><EnboxProvider application={createApplication({ stores: applicationOptions.stores, connection: () => client })}><App /></EnboxProvider></StrictMode>,
 );

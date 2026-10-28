@@ -1,10 +1,9 @@
 import type { ObservableStore } from '@enbox/browser';
 
 import { act, renderHook } from '@testing-library/react';
-import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { useObservableStore } from '../src/index.js';
+import { useStore } from '../src/index.js';
 
 class TestStore<Snapshot> implements ObservableStore<Snapshot> {
   public readonly listeners = new Set<(snapshot: Snapshot) => void>();
@@ -40,7 +39,7 @@ describe('borrowed observable stores', () => {
         return () => {};
       },
     };
-    const hook = renderHook(() => useObservableStore(source, 0));
+    const hook = renderHook(() => useStore(source));
     act(() => { count = 2; notify(); });
     expect(hook.result.current).toBe(2);
   });
@@ -48,9 +47,8 @@ describe('borrowed observable stores', () => {
   it('reads published snapshots with the store receiver and releases only its subscription', () => {
     const first = Object.freeze({ count: 1 });
     const second = Object.freeze({ count: 2 });
-    const fallback = Object.freeze({ count: 0 });
     const store = new TestStore<Readonly<{ count: number }>>(first);
-    const hook = renderHook(() => useObservableStore(store, fallback));
+    const hook = renderHook(() => useStore(store));
     expect(hook.result.current).toBe(first);
     hook.rerender();
     expect(hook.result.current).toBe(first);
@@ -65,7 +63,7 @@ describe('borrowed observable stores', () => {
   it('releases replaced stores and uses the current fallback when no store is supplied', () => {
     const first = new TestStore(1);
     const second = new TestStore(2);
-    const hook = renderHook(({ store, fallback }) => useObservableStore(store, fallback), {
+    const hook = renderHook(({ store, fallback }) => useStore(store, { fallback }), {
       initialProps: { store: first as ObservableStore<number> | null | undefined, fallback: 0 },
     });
     hook.rerender({ store: second, fallback: 0 });
@@ -84,7 +82,7 @@ describe('borrowed observable stores', () => {
   it('does not lose a change made while its subscription attaches', () => {
     const store = new TestStore(1);
     store.onSubscribe = vi.fn(() => store.publish(2));
-    const hook = renderHook(() => useObservableStore(store, 0));
+    const hook = renderHook(() => useStore(store, { fallback: 0 }));
     expect(hook.result.current).toBe(2);
     expect(store.onSubscribe).toHaveBeenCalledOnce();
   });
@@ -94,7 +92,7 @@ describe('borrowed observable stores', () => {
     let renders = 0;
     const hook = renderHook(() => {
       renders += 1;
-      return useObservableStore(store, 0, (snapshot) => snapshot.count);
+      return useStore(store, { selector: (snapshot) => snapshot.count });
     });
     const initialRenders = renders;
     act(() => store.publish({ count: 1, status: 'refreshing' }));
@@ -111,10 +109,7 @@ describe('borrowed observable stores', () => {
     const first = new TestStore(2);
     const second = new TestStore(3);
     const fallback = Object.freeze({ value: 0 });
-    const hook = renderHook(({ store, multiplier }) => useObservableStore(
-      store, fallback, (snapshot) => ({ value: snapshot * multiplier }),
-      (previous, next) => previous.value === next.value,
-    ), { initialProps: { store: first, multiplier: 1 } });
+    const hook = renderHook(({ store, multiplier }) => useStore(store, { fallback: fallback, selector: (snapshot) => ({ value: snapshot * multiplier }), isEqual: (previous, next) => previous.value === next.value }), { initialProps: { store: first, multiplier: 1 } });
     const original = hook.result.current;
     hook.rerender({ store: first, multiplier: 1 });
     expect(hook.result.current).toBe(original);
@@ -130,7 +125,7 @@ describe('borrowed observable stores', () => {
 
   it('uses selected fallbacks without passing absent sources to the selector', () => {
     const select = vi.fn((snapshot: number) => `count:${snapshot}`);
-    const hook = renderHook(({ store, fallback }) => useObservableStore(store, fallback, select), {
+    const hook = renderHook(({ store, fallback }) => useStore(store, { fallback: fallback, selector: select }), {
       initialProps: { store: null as TestStore<number> | null | undefined, fallback: 'none' },
     });
     expect(hook.result.current).toBe('none');
@@ -147,7 +142,7 @@ describe('borrowed observable stores', () => {
     }
     const first = new MutableSource('first');
     const second = new MutableSource('second');
-    const hook = renderHook(({ store }) => useObservableStore(store, 'none', () => store.label), {
+    const hook = renderHook(({ store }) => useStore(store, { fallback: 'none', selector: () => store.label }), {
       initialProps: { store: first },
     });
     expect(hook.result.current).toBe('first');
@@ -160,32 +155,16 @@ describe('borrowed observable stores', () => {
   it('selects a legitimate undefined snapshot without substituting the fallback', () => {
     const store = new TestStore<number | undefined>(undefined);
     const hook = renderHook(() => [
-      useObservableStore(store, 0),
-      useObservableStore(store, 'fallback', (snapshot) => snapshot === undefined ? 'undefined' : String(snapshot)),
+      useStore(store, { fallback: 0 }),
+      useStore(store, { fallback: 'fallback', selector: (snapshot) => snapshot === undefined ? 'undefined' : String(snapshot) }),
     ]);
     expect(hook.result.current).toEqual([undefined, 'undefined']);
-  });
-
-  it('renders server fallbacks without reading the store or invoking its selector', () => {
-    const store = new TestStore(42);
-    const read = vi.spyOn(store, 'getSnapshot');
-    const subscribe = vi.spyOn(store, 'subscribe');
-    const select = vi.fn((snapshot: number) => `count:${snapshot}`);
-    function Content() {
-      const native = useObservableStore(store, 0);
-      const selected = useObservableStore(store, 'server fallback', select);
-      return <output>{native}|{selected}</output>;
-    }
-    expect(renderToString(<Content />)).toContain('0<!-- -->|<!-- -->server fallback');
-    expect(read).not.toHaveBeenCalled();
-    expect(subscribe).not.toHaveBeenCalled();
-    expect(select).not.toHaveBeenCalled();
   });
 
   it('observes selected updates made while the subscription attaches', () => {
     const store = new TestStore(1);
     store.onSubscribe = () => store.publish(2);
-    const hook = renderHook(() => useObservableStore(store, 'none', (snapshot) => `count:${snapshot}`));
+    const hook = renderHook(() => useStore(store, { fallback: 'none', selector: (snapshot) => `count:${snapshot}` }));
     expect(hook.result.current).toBe('count:2');
   });
 });

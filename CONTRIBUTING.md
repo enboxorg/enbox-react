@@ -6,22 +6,22 @@ Use the Node and Bun versions in `.node-version` and `.bun-version`.
 Install dependencies with `bun install --frozen-lockfile`. Dependency versions
 and the allowed peer releases are fixed. `bunfig.toml` disables automatic
 runtime installation. The standalone starter ships no lockfile and uses
-published SDK exports. Its isolated browser check installs the current packed
-SDK instead. `starter:dev` also uses the local SDK archive without changing
-the template manifest or generating a template lockfile.
+published SDK exports. Its isolated browser check installs the packed React
+library against the published Enbox SDKs. `starter:dev` also uses the local React
+archive without changing the template manifest or generating a template lockfile.
 
 | Command | Purpose |
 | --- | --- |
 | `bun run build` | Clear generated output and build ESM, declarations, and source maps. |
 | `bun run typecheck` | Build public declarations and check source, type contracts, and tooling configuration. |
-| `bun run test` | Run unit, React, and native local DWN tests. |
-| `bun run test:react18` | Install the packed SDK and run consumer types and regressions with React 18.3.1. |
+| `bun run test` | Run React and native-reader integration regressions. |
+| `bun run test:react18` | Install the packed React library and run consumer types and regressions with React 18.3.1. |
 | `bun run test:package` | Build and verify public runtime exports and client boundaries. |
 | `bun run audit` | Audit all locked runtime and development dependencies; every advisory fails the check. |
 | `bun run check` | Run the dependency audit, type checks, unit/integration tests, and package checks. |
 | `bun run test:generator` | Check the CLI's filesystem, metadata, and argument handling. |
-| `bun run test:browser` | Pack the generator and SDK, create an isolated app, and check its install, types, build, and browser behavior. |
-| `bun run starter:dev` | Build/install the local packed SDK and serve the canonical starter with Vite. |
+| `bun run test:browser` | Pack the generator and React library, create an isolated app, and check its install, types, build, and browser behavior. |
+| `bun run starter:dev` | Build/install the packed React library and serve the canonical starter with Vite. |
 
 Install Chromium with `bunx --no-install playwright install chromium` before
 running browser tests if it is not available. See [testing](docs/testing.md)
@@ -31,11 +31,11 @@ for fixture boundaries and integration coverage.
 
 Keep native authentication, protocol, persistence, and replication behavior
 in Enbox. This package owns React subscriptions, rendered connection bindings,
-view lifetimes, and presentation state. See [architecture](docs/architecture.md)
+and presentation state. Native view ownership stays in the SDK. See [architecture](docs/architecture.md)
 for those contracts.
 
 Use explicit domain names, preserve native public types, and keep public
-exports in the two entrypoint files. Prefix hooks with `use`. Distinguish a
+exports in the React entrypoint. Prefix hooks with `use`. Distinguish a
 connection binding from a record context: the first identifies the current
 facade/session; `within` identifies a protocol context.
 
@@ -45,11 +45,11 @@ that describe a value's role, such as a native view, rendered snapshot, or
 opening attempt.
 
 Keep JSDoc focused on public contracts that signatures cannot express: when
-resources start and stop, what a Promise waits for, or how errors are surfaced.
+observations start and stop, what a Promise waits for, or how errors are surfaced.
 Use internal comments to explain ordering and lifetime checks. Omit comments
 that repeat the code or describe each parameter without adding context.
 
-Add regression tests for changes to resource ownership, session guards, or
+Add regression tests for changes to observation ownership, session guards, or
 async error handling. Run the relevant suite while developing, then run
 `check`. Changes to startup, worker behavior, or the starter also need the
 browser suite. Generated `dist` and test reports are not committed.
@@ -61,7 +61,8 @@ to `main`; its actions are pinned to immutable commits.
 Keep `@enbox/browser` pinned and React peers limited to tested releases so
 applications use their own SDK and React instances. `use-sync-external-store`
 is the runtime dependency.
-Root development dependencies support only SDK compilation and tests.
+Root development dependencies compile the React library and support its native
+integration tests.
 
 | Development dependencies | Use |
 | --- | --- |
@@ -70,7 +71,7 @@ Root development dependencies support only SDK compilation and tests.
 | `vitest`, `@testing-library/react`, `@testing-library/dom`, `jsdom` | Unit tests, React lifecycle tests, and the DOM environment. |
 | `@playwright/test` | Production browser tests. |
 | `typescript`, `@types/react`, `@types/use-sync-external-store` | Compilation, declarations, and type contracts. |
-| `react-dom`, `@types/react-dom` | Renderer, SSR, and hydration tests. |
+| `react-dom`, `@types/react-dom` | Client rendering and lifecycle tests. |
 | `@types/node` | Node APIs in tests and tooling configuration. |
 
 The single starter source lives in `packages/create-dapp/template`. Keep its
@@ -97,7 +98,7 @@ their lockfile changes, including advisories, before accepting them.
 `test:browser` creates temporary npm and Bun projects outside the repository.
 It verifies that neither ships a lockfile, runs a fresh audited install and
 build for each, then repeats a frozen install against the newly generated lock.
-The app uses the current packed SDK so unpublished changes can be tested.
+The app uses the packed React library so unpublished binding changes can be tested.
 Test fixtures are added only after the production build and are never generated
 for users. The separate React 18 consumer retains its committed frozen lockfile.
 
@@ -130,14 +131,13 @@ gh workflow run publish.yml --repo enboxorg/enbox-react --ref main
 ```
 
 The generator is a separate npm package, `@enbox/create-dapp`. After approval,
-dispatch `publish-create-dapp.yml` on `main`. It runs SDK and generator checks,
-verifies the generated app against its actual published SDK pin, and publishes
-that tested generator archive to
-`latest` with provenance. Configure its npm trusted publisher with
+dispatch `publish-create-dapp.yml` on `main`. It runs React and generator checks,
+verifies the generated app against its published React and Enbox dependencies,
+and publishes that tested generator archive to `latest` with provenance. Configure its npm trusted publisher with
 `publish-create-dapp.yml`, or give `NPM_TOKEN` access to this package too. A
 package's first publication can use the token before its trusted publisher is
 configured. Merging changes does not publish either package automatically.
 
 When a template needs a new React release, publish React first, wait for npm
 visibility, then dispatch the generator workflow. Its registry-only consumer
-check fails if the exact SDK pin is unavailable.
+check fails if the exact React pin is unavailable.

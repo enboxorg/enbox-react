@@ -1,3 +1,4 @@
+import type { StoreInstance } from '@enbox/browser';
 import { useFeature, useStore } from '@enbox/react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
@@ -5,12 +6,14 @@ import type { FormEvent } from 'react';
 import { TaskBoardStore } from '../store.js';
 import './tasks.css';
 
+type TaskState = ReturnType<StoreInstance<typeof TaskBoardStore>['activeTasks']['getSnapshot']>;
+
 export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   const board = useFeature(TaskBoardStore);
   const projects = useStore(board.projects);
-  const creation = useStore(board.createProject);
-  const paging = useStore(board.moreProjects);
-  const [projectContextId, setProjectContextId] = useState<string>();
+  const activeTasks = useStore(board.activeTasks);
+  const creation = useStore(board.projects.create);
+  const projectContextId = activeTasks.selection;
   const [name, setName] = useState('');
   const creating = creation.pendingCount > 0;
   const prompt = projects.status === 'loading' ? 'Loading projects…'
@@ -19,8 +22,11 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
   async function addProject(event: FormEvent) {
     event.preventDefault();
     try {
-      const record = await board.createProject.run(name);
-      if (board.createProject.isCurrent()) { setProjectContextId(record.contextId); setName(''); }
+      const record = await board.createProject(name);
+      if (board.projects.create.isCurrent()) {
+        setName('');
+        await board.activeTasks.select(record.contextId);
+      }
     } catch { /* The command exposes the error below. */ }
   }
   return (
@@ -38,28 +44,28 @@ export function TaskBoard({ disabled = false }: { disabled?: boolean }) {
       {creation.error && <p role="alert">Couldn’t create the project: {creation.error.message}</p>}
       {projects.status === 'error' && <div role="alert">
         <p>Couldn’t load projects: {projects.error.message}</p>
-        <button type="button" disabled={disabled} onClick={() => { void board.retryProjects.run(); }}>Try again</button>
+        <button type="button" disabled={disabled} onClick={() => { void board.projects.retry().catch(() => {}); }}>Try again</button>
       </div>}
       <div className="project-picker" role="group" aria-label="Projects">
         {projects.records.map(({ record, value }) => <button type="button" className="button button-quiet" key={record.id} disabled={disabled}
-          aria-pressed={record.contextId === projectContextId} onClick={() => setProjectContextId(record.contextId)}>{value.name}</button>)}
+          aria-pressed={record.contextId === projectContextId} onClick={() => { void board.activeTasks.select(record.contextId).catch(() => {}); }}>{value.name}</button>)}
       </div>
-      {projects.hasMore && <button type="button" disabled={disabled || paging.pendingCount > 0}
-        onClick={() => { void board.moreProjects.run(); }}>More projects</button>}
-      {projectContextId !== undefined
-        ? <ProjectTasks key={projectContextId} within={projectContextId} disabled={disabled} />
+      {projects.hasMore && <button type="button" disabled={disabled || projects.isLoadingMore}
+        onClick={() => { void board.projects.loadMore().catch(() => {}); }}>More projects</button>}
+      {projectContextId !== null
+        ? <ProjectTasks key={projectContextId} within={projectContextId} tasks={activeTasks} disabled={disabled} />
         : <p role="status">{prompt}</p>}
     </section>
   );
 }
 
-function ProjectTasks({ within, disabled }: { within: string; disabled: boolean }) {
+function ProjectTasks({ within, tasks, disabled }: {
+  within: string; tasks: TaskState; disabled: boolean;
+}) {
   const board = useFeature(TaskBoardStore);
-  const resource = board.tasks.within(within);
-  const tasks = useStore(resource);
-  const creation = useStore(resource.create);
-  const updates = useStore(resource.patch);
-  const paging = useStore(board.moreTasks);
+  const taskCollection = board.tasks.within(within);
+  const creation = useStore(taskCollection.create);
+  const updates = useStore(taskCollection.patch);
   const [title, setTitle] = useState('');
   // Reopening the same record creates a new UI target for completion guards.
   const [selection, setSelection] = useState<{ id: string }>();
@@ -68,7 +74,7 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
     event.preventDefault();
     try {
       const record = await board.createTask({ within, title });
-      if (resource.create.isCurrent()) { setSelection({ id: record.id }); setTitle(''); }
+      if (taskCollection.create.isCurrent()) { setSelection({ id: record.id }); setTitle(''); }
     } catch { /* The scoped create command exposes the error below. */ }
   }
   return <div className="project-content">
@@ -82,18 +88,18 @@ function ProjectTasks({ within, disabled }: { within: string; disabled: boolean 
     {creation.error && <p role="alert">Couldn’t add the task: {creation.error.message}</p>}
     {updates.error && <p role="alert">Couldn’t update the task: {updates.error.message}</p>}
     {tasks.status === 'error' && <p role="alert">Couldn’t load tasks. <button type="button"
-      disabled={disabled} onClick={() => { void board.retryTasks.run(within); }}>Retry tasks</button></p>}
+      disabled={disabled} onClick={() => { void taskCollection.retry().catch(() => {}); }}>Retry tasks</button></p>}
     <ul className="task-list">
-      {tasks.records.map(({ record, value }) => <li key={record.id} data-completed={value.completed}>
+      {(tasks.records ?? []).map(({ record, value }) => <li key={record.id} data-completed={value.completed}>
         <input type="checkbox" aria-label={`Complete ${value.title}`} checked={value.completed}
-          disabled={disabled || updates.pendingVariables.some((input) => input.id === record.id)}
-          onChange={(event) => { void resource.patch.run({ id: record.id, patch: { completed: event.currentTarget.checked } }); }} />
+          disabled={disabled || updates.pendingInputs.some((input) => input.id === record.id)}
+          onChange={(event) => { void taskCollection.patch.run({ id: record.id, patch: { completed: event.currentTarget.checked } }).catch(() => {}); }} />
         <button type="button" className="button button-quiet" aria-label={`Open task ${value.title}`}
           disabled={disabled} aria-pressed={record.id === selection?.id} onClick={() => setSelection({ id: record.id })}>{value.title}</button>
       </li>)}
     </ul>
-    {tasks.hasMore && <button type="button" disabled={disabled || paging.pendingVariables.includes(within)}
-      onClick={() => { void board.moreTasks.run(within); }}>More tasks</button>}
+    {tasks.hasMore && <button type="button" disabled={disabled || tasks.isLoadingMore}
+      onClick={() => { void taskCollection.loadMore().catch(() => {}); }}>More tasks</button>}
     {selection !== undefined
       ? <TaskDetails key={selection.id} within={within} recordId={selection.id} disabled={disabled}
         onClose={() => setSelection((current) => current === selection ? undefined : current)} />
@@ -105,31 +111,32 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
   within: string; recordId: string; disabled: boolean; onClose: () => void;
 }) {
   const board = useFeature(TaskBoardStore);
-  const resource = board.tasks.within(within);
-  const list = useStore(resource);
+  const taskCollection = board.tasks.within(within);
+  const list = useStore(taskCollection);
   const listed = list.records.some((row) => row.record.id === recordId);
   // A bounded window cannot prove an unlisted record is missing. Reuse loaded
   // rows, and acquire a single-record view only while that proof is unavailable.
   const needsLookup = !listed && (list.status !== 'ready' || list.hasMore);
-  const selection = useStore(needsLookup ? board.taskById(within, recordId) : resource);
-  const task = selection.records.find((row) => row.record.id === recordId);
-  const status = selection.status;
-  const updates = useStore(resource.patch);
-  const deletion = useStore(resource.delete);
+  const lookup = needsLookup ? board.taskById(within, recordId) : null;
+  const details = useStore(lookup, { fallback: list });
+  const task = details.records.find((row) => row.record.id === recordId);
+  const status = details.status;
+  const updates = useStore(taskCollection.patch);
+  const deletion = useStore(taskCollection.delete);
   const [draft, setDraft] = useState<string>();
-  const pending = updates.pendingVariables.some((input) => input.id === recordId) || deletion.pendingVariables.includes(recordId);
+  const pending = updates.pendingInputs.some((input) => input.id === recordId) || deletion.pendingInputs.includes(recordId);
   async function saveTitle(event: FormEvent) {
     event.preventDefault();
     if (draft === undefined) return;
     try {
       await board.renameTask({ within, id: recordId, title: draft });
-      if (resource.patch.isCurrent()) setDraft(undefined);
+      if (taskCollection.patch.isCurrent()) setDraft(undefined);
     } catch { /* The scoped patch command exposes the error below. */ }
   }
   async function deleteTask() {
     try {
-      await resource.delete.run(recordId);
-      if (resource.delete.isCurrent()) onClose();
+      await taskCollection.delete.run(recordId);
+      if (taskCollection.delete.isCurrent()) onClose();
     } catch { /* The scoped delete command exposes the error below. */ }
   }
   const data = task?.value;
@@ -137,8 +144,7 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
     <h3>Task details</h3>
     {status === 'error' && <p role="alert">Couldn’t load the task. <button type="button"
       disabled={disabled} onClick={() => {
-        if (needsLookup) void board.retryTask.run({ within, recordId });
-        else void board.retryTasks.run(within);
+        void (lookup ?? taskCollection).retry().catch(() => {});
       }}>Retry task</button></p>}
     {data === undefined && status === 'loading' && <p role="status">Loading task…</p>}
     {data === undefined && status === 'ready' && <p role="status">This task is no longer available.</p>}

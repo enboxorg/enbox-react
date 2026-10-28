@@ -42,7 +42,6 @@ for (const entry of readdirSync(join(root, 'tests'), { withFileTypes: true })) {
   const original = readFileSync(join(root, 'tests', entry.name), 'utf8');
   const installed = original.replace(/(['"])\.\.\/src\/([^'"]+)\.js\1/g, (_match, quote, module) => {
     const target = module === 'index' ? '@enbox/react'
-      : module === 'config/index' ? '@enbox/react/config'
       : `../../node_modules/@enbox/react/dist/${module}.js`;
     return `${quote}${target}${quote}`;
   });

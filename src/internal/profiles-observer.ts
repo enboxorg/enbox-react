@@ -3,9 +3,8 @@ import type {
   ProfileReader, ProfileReaderImagesMode, ProfileReaderSource, ProfileSnapshot,
 } from '@enbox/browser';
 import { createBlobUrlPool, createProfileReader } from '@enbox/browser';
-import { reportCleanupError } from './errors.js';
+import { EnboxBindingChangedError, reportCleanupError } from './errors.js';
 import { notifyListeners } from './listeners.js';
-import { EnboxBindingChangedError } from '../errors.js';
 
 export type ResolvedProfile = Readonly<NonNullable<ProfileSnapshot['profile']['value']> & {
   avatarUrl?: string;
@@ -14,7 +13,7 @@ export type ResolvedProfile = Readonly<NonNullable<ProfileSnapshot['profile']['v
 export type ProfileSource = ProfileReaderSource;
 export type ProfileOptions = Readonly<{
   enabled?: boolean;
-  /** Eager preserves the convenience default; lazy waits for loadImages(). */
+  /** Images load eagerly by default; lazy waits for loadImages(). */
   images?: ProfileReaderImagesMode;
 }>;
 export type ProfileFieldState = Readonly<Pick<ProfileFieldSnapshot<unknown>, 'status' | 'failure'>>;
@@ -47,7 +46,7 @@ export function idleProfileResult(did?: string): ProfileResult {
 const IMAGE_URL_RELEASE_DELAY_MS = 60_000;
 let imageUrlPool: ReturnType<typeof createBlobUrlPool> | undefined;
 
-/** Shares native reads by source and policy; construction acquires no resources. */
+/** Shares native reads by source and policy; construction performs no I/O. */
 class SharedProfileReader {
   private reader: ProfileReader | undefined;
   private references = 0;
@@ -83,19 +82,19 @@ class SharedProfileReader {
   }
 }
 
-const readerResources = new WeakMap<ProfileSource, Map<ReaderPolicy, SharedProfileReader>>();
+const sharedReaders = new WeakMap<ProfileSource, Map<ReaderPolicy, SharedProfileReader>>();
 function sharedReaderFor(source: ProfileSource, policy: ReaderPolicy): SharedProfileReader {
-  let policies = readerResources.get(source);
+  let policies = sharedReaders.get(source);
   if (policies === undefined) {
     policies = new Map();
-    readerResources.set(source, policies);
+    sharedReaders.set(source, policies);
   }
-  let resource = policies.get(policy);
-  if (resource === undefined) {
-    resource = new SharedProfileReader(source, policy);
-    policies.set(policy, resource);
+  let sharedReader = policies.get(policy);
+  if (sharedReader === undefined) {
+    sharedReader = new SharedProfileReader(source, policy);
+    policies.set(policy, sharedReader);
   }
-  return resource;
+  return sharedReader;
 }
 
 function bindImage(
@@ -122,7 +121,7 @@ function sameFieldState(previous: ProfileFieldState, next: ProfileFieldState): b
   return previous.status === next.status && previous.failure === next.failure;
 }
 
-/** React consumers own watches and image leases; the resource shares native reads. */
+/** React consumers own watches and image leases; native reads are shared by source and policy. */
 export class ProfilesObserver {
   private readonly listeners = new Set<() => void>();
   private bindings = new Map<string, ProfileBinding>();
@@ -147,7 +146,6 @@ export class ProfilesObserver {
   }
 
   public readonly getSnapshot = (): ReadonlyMap<string, ProfileResult> => this.snapshot;
-  public readonly getServerSnapshot = (): ReadonlyMap<string, ProfileResult> => this.idleProfiles;
   public readonly subscribe = (notify: () => void): (() => void) => {
     const listener = (): void => { notify(); };
     this.listeners.add(listener);

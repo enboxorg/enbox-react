@@ -13,13 +13,13 @@ vi.mock('@enbox/browser', async (original) => ({
   BrowserConnectHandler: mocks.handler,
 }));
 
-import { EnboxProvider, useEnboxClient, useEnboxConnection } from '../src/index.js';
-import { createEnboxClient, defineApplicationManifest, defineProtocol, recordCodecs } from '../src/config/index.js';
+import { EnboxProvider, useEnboxConnection } from '../src/index.js';
+import { createApplication, defineProtocol, recordCodecs } from '@enbox/browser';
 
-const application = defineApplicationManifest({ protocols: [defineProtocol({
+const protocol = defineProtocol({
   protocol: 'https://wallet-options.test/notes', published: false,
   types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
-} as const, { note: recordCodecs.json<{ title: string }>() })] });
+} as const, { note: recordCodecs.json<{ title: string }>() });
 
 function captureApproval(client: ConnectionStore): void {
   const snapshot = { phase: 'disconnected' } as const;
@@ -33,22 +33,19 @@ function captureApproval(client: ConnectionStore): void {
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe('provider wallet configuration', () => {
-  it.each(['existing', 'configured'] as const)('retains the %s client factory identity when choosing a wallet', async (provider) => {
+  it('inherits the application wallet identity when choosing a wallet', async () => {
     const wallet = { appName: 'Original notes', appIcon: '/original.svg', applicationId: 'notes-id' };
-    const config = { application, wallet };
-    const supplied = provider === 'existing' ? createEnboxClient(config) : undefined;
-    const hook = renderHook(() => ({ client: useEnboxClient(), connection: useEnboxConnection() }), {
-      wrapper: ({ children }) => supplied === undefined
-        ? <EnboxProvider config={config} initializeOnMount={false}>{children}</EnboxProvider>
-        : <EnboxProvider client={supplied} initializeOnMount={false}>{children}</EnboxProvider>,
+    const application = createApplication({ stores: {}, protocols: [protocol], wallet });
+    const hook = renderHook(useEnboxConnection, {
+      wrapper: ({ children }) => <EnboxProvider application={application} initializeOnMount={false}>{children}</EnboxProvider>,
     });
-    captureApproval(hook.result.current.client);
+    captureApproval(application.connection);
     wallet.appName = 'Changed notes';
     wallet.appIcon = '/changed.svg';
     wallet.applicationId = 'changed-id';
     hook.rerender();
     await act(async () => {
-      await hook.result.current.connection.connect({ wallet: {
+      await hook.result.current.connect({ wallet: {
         walletUrl: 'https://chosen-wallet.test', preferredMethod: 'phone',
       } });
     });
@@ -57,14 +54,15 @@ describe('provider wallet configuration', () => {
       walletUrl: 'https://chosen-wallet.test', preferredMethod: 'phone',
     });
     hook.unmount();
-    await supplied?.dispose();
+    await application.dispose();
   });
 
   it('keeps explicit per-call wallet overrides', async () => {
-    const client = createEnboxClient({ application, wallet: { appName: 'Notes', appIcon: '/original.svg' } });
+    const application = createApplication({ stores: {}, protocols: [protocol], wallet: { appName: 'Notes', appIcon: '/original.svg' } });
+    const client = application.connection;
     captureApproval(client);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} initializeOnMount={false}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={application} initializeOnMount={false}>{children}</EnboxProvider>,
     });
     await act(async () => {
       await hook.result.current.connect({ wallet: { appName: 'Custom notes', appIcon: '/custom.svg' } });
@@ -73,6 +71,6 @@ describe('provider wallet configuration', () => {
       appName: 'Custom notes', appIcon: '/custom.svg',
     });
     hook.unmount();
-    await client.dispose();
+    await application.dispose();
   });
 });

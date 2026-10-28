@@ -41,7 +41,7 @@ vi.mock('@enbox/browser', async (original) => ({
 }));
 import { useProfile, useProfiles } from '../src/hooks/profiles.js';
 import { ProfilesObserver } from '../src/internal/profiles-observer.js';
-import { EnboxBindingChangedError } from '../src/errors.js';
+import { EnboxBindingChangedError } from '../src/internal/errors.js';
 import { deferred } from './helpers.js';
 
 function source(): ProfileReaderSource { return { records: {} } as ProfileReaderSource; }
@@ -89,7 +89,7 @@ describe('public profile bindings', () => {
 
   it('returns inert idle state for missing or disabled sources and absent DIDs', async () => {
     const missing = renderHook(() => useProfile(undefined, 'did:a'));
-    const disabled = renderHook(() => useProfile(source(), 'did:a', false));
+    const disabled = renderHook(() => useProfile(source(), 'did:a', { enabled: false }));
     const absent = renderHook(() => useProfile(source(), undefined));
     const states = renderHook(() => useProfiles(source(), ['did:a', 'did:b'], { enabled: false }));
     expect(missing.result.current.status).toBe('idle');
@@ -421,7 +421,7 @@ describe('public profile bindings', () => {
 
   it('uses no reader for disabled, empty, or absent sources', () => {
     renderHook(() => useProfiles(undefined, ['did:a']));
-    renderHook(() => useProfile(source(), 'did:a', false));
+    renderHook(() => useProfile(source(), 'did:a', { enabled: false }));
     renderHook(() => useProfile(source(), ''));
     renderHook(() => useProfiles(source(), []));
     expect(mocks.createReader).not.toHaveBeenCalled();

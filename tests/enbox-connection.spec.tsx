@@ -2,9 +2,10 @@ import type { ConnectionSnapshot, VaultConnectOptions } from '@enbox/browser';
 import type { PropsWithChildren } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { EnboxProvider, useEnboxConnection, EnboxBindingChangedError } from '../src/index.js';
+import { EnboxBindingChangedError } from '../src/internal/errors.js';
+import { EnboxProvider, useEnboxConnection } from '../src/index.js';
 import { ConnectionController } from '../src/internal/connection-controller.js';
-import { connected, controlledClient, deferred, facade } from './helpers.js';
+import { applicationFor, connected, controlledClient, deferred, facade } from './helpers.js';
 import { ConnectDeniedError } from '@enbox/browser';
 
 const connectActions = ['connect', 'connectVault'] as const;
@@ -16,7 +17,7 @@ describe('dapp connection workflow', () => {
     const beforeConnect = vi.fn();
     const options: VaultConnectOptions = { password: 'test-only', createIdentity: true, metadata: { name: 'Local' } };
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
     });
     const controls = hook.result.current;
     hook.rerender();
@@ -32,7 +33,7 @@ describe('dapp connection workflow', () => {
     const guard = deferred<void>();
     const beforeConnect = vi.fn(() => guard.promise);
     const hook = renderHook(() => [useEnboxConnection(), useEnboxConnection()] as const, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
     });
     const other = action === 'connect' ? 'connectVault' : 'connect';
     let first!: Promise<void>; let second!: Promise<void>;
@@ -51,7 +52,7 @@ describe('dapp connection workflow', () => {
     const { client } = controlledClient(initial);
     const failure = new Error('save failed');
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client}
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}
         beforeConnect={async () => { throw failure; }}>{children}</EnboxProvider>,
     });
     await act(async () => { await expect(hook.result.current[action]()).rejects.toBe(failure); });
@@ -73,7 +74,7 @@ describe('dapp connection workflow', () => {
         return outcome;
       });
       const hook = renderHook(useEnboxConnection, {
-        wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+        wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}>{children}</EnboxProvider>,
       });
       let pending!: Promise<void>;
       act(() => { pending = hook.result.current.connectVault(); });
@@ -119,7 +120,7 @@ describe('dapp connection workflow', () => {
       expect(listeners.size).toBe(1);
       releaseReplacement();
       expect(listeners.size).toBe(0);
-      if (throws) expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Resource cleanup failed.', failure);
+      if (throws) expect(warn).toHaveBeenCalledExactlyOnceWith('[@enbox/react] Cleanup failed.', failure);
       else expect(warn).not.toHaveBeenCalled();
     } finally {
       releaseReplacement();
@@ -146,12 +147,12 @@ describe('dapp connection workflow', () => {
     await expect(controller[action](undefined, {})).rejects.toBeInstanceOf(EnboxBindingChangedError);
   });
 
-  it.each(connectActions)('retires an existing-client provider guard and rejects its captured controls without disposing the client (%s)', async (action) => {
+  it.each(connectActions)('retires an application provider guard and rejects its captured controls without disposing the client (%s)', async (action) => {
     const { client } = controlledClient(connected());
     const saving = deferred<void>();
     const beforeConnect = vi.fn(() => saving.promise);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
     });
     const captured = hook.result.current;
     let connecting!: Promise<void>;
@@ -176,7 +177,7 @@ describe('dapp connection workflow', () => {
     const saving = deferred<void>();
     const beforeDisconnect = vi.fn(() => saving.promise);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>,
     });
     let disconnecting!: Promise<void>;
     act(() => { disconnecting = hook.result.current.disconnect(); });
@@ -194,11 +195,11 @@ describe('dapp connection workflow', () => {
     const saving = deferred<void>();
     let connection!: ReturnType<typeof useEnboxConnection>;
     function Consumer() { connection = useEnboxConnection(); return null; }
-    const tree = render(<EnboxProvider client={client} beforeConnect={() => saving.promise}><Consumer /></EnboxProvider>);
+    const tree = render(<EnboxProvider application={applicationFor(client)} beforeConnect={() => saving.promise}><Consumer /></EnboxProvider>);
     let connecting!: Promise<void>;
     act(() => { connecting = connection[action](); });
     await act(async () => { await Promise.resolve(); });
-    tree.rerender(<EnboxProvider client={client} beforeConnect={() => saving.promise}>{null}</EnboxProvider>);
+    tree.rerender(<EnboxProvider application={applicationFor(client)} beforeConnect={() => saving.promise}>{null}</EnboxProvider>);
     await act(async () => { saving.resolve(); await connecting; });
     expect(client[action]).toHaveBeenCalledOnce();
     expect(client.dispose).not.toHaveBeenCalled();
@@ -213,7 +214,7 @@ describe('dapp connection workflow', () => {
     const saving = deferred<void>();
     const beforeConnect = vi.fn().mockReturnValueOnce(saving.promise).mockResolvedValue(undefined);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={selected} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(selected)} beforeConnect={beforeConnect}>{children}</EnboxProvider>,
     });
     const captured = hook.result.current;
     let connecting!: Promise<void>;
@@ -237,7 +238,7 @@ describe('dapp connection workflow', () => {
     const issued = deferred<ReturnType<typeof client.getSnapshot>>();
     client[action].mockReturnValueOnce(issued.promise);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}>{children}</EnboxProvider>,
     });
     let pending!: Promise<void>;
     act(() => { pending = hook.result.current[action](); });
@@ -259,7 +260,7 @@ describe('dapp connection workflow', () => {
     const { client } = controlledClient(connected(facade(), 'did:example:alice', lifetime));
     const saving = deferred<void>();
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={() => saving.promise}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeConnect={() => saving.promise}>{children}</EnboxProvider>,
     });
     let connecting!: Promise<void>;
     act(() => { connecting = hook.result.current[action](); });
@@ -273,7 +274,7 @@ describe('dapp connection workflow', () => {
   it.each(connectActions)('preserves the provider workflow through StrictMode replay (%s)', async (action) => {
     const { client } = controlledClient(connected());
     const hook = renderHook(useEnboxConnection, { reactStrictMode: true,
-      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}>{children}</EnboxProvider>,
     });
     await act(async () => { await Promise.resolve(); await hook.result.current[action](); });
     expect(client[action]).toHaveBeenCalledOnce();
@@ -284,7 +285,7 @@ describe('dapp connection workflow', () => {
     const { client } = controlledClient();
     const guard = deferred<void>();
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeConnect={() => guard.promise}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeConnect={() => guard.promise}>{children}</EnboxProvider>,
     });
     let pending!: Promise<void>;
     act(() => { pending = hook.result.current[action](); });
@@ -319,7 +320,7 @@ describe('dapp connection workflow', () => {
     const saving = deferred<void>();
     client[action].mockReturnValueOnce(issued.promise);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
     });
     let connecting!: Promise<void>;
     let settled = false;
@@ -351,7 +352,7 @@ describe('dapp connection workflow', () => {
     const beforeConnect = vi.fn();
     client.initialize.mockReturnValue(initialization.promise);
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} initializeOnMount={false}
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} initializeOnMount={false}
         beforeConnect={beforeConnect} beforeDisconnect={() => disconnectGuard.promise}>
         {children}
       </EnboxProvider>,
@@ -392,7 +393,7 @@ describe('dapp connection workflow', () => {
       return repaired;
     });
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}>{children}</EnboxProvider>,
     });
     expect(hook.result.current.walletRepair).toEqual({ reason: 'expired', status: 'required' });
     let connecting!: Promise<void>;
@@ -412,7 +413,7 @@ describe('dapp connection workflow', () => {
     const saving = deferred<void>();
     const beforeDisconnect = vi.fn(() => saving.promise);
     const wrapper = ({ children }: PropsWithChildren) =>
-      <EnboxProvider client={client} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>;
+      <EnboxProvider application={applicationFor(client)} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>;
     // Multiple hooks within one provider must see the same workflow.
     const together = renderHook(() => [useEnboxConnection(), useEnboxConnection()] as const, { wrapper });
     let a!: Promise<void>; let b!: Promise<void>;
@@ -431,7 +432,7 @@ describe('dapp connection workflow', () => {
     const failure = new Error('unsaved edits');
     const beforeDisconnect = vi.fn(async () => { throw failure; });
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)} beforeDisconnect={beforeDisconnect}>{children}</EnboxProvider>,
     });
     await act(async () => { await expect(hook.result.current.disconnect()).rejects.toBe(failure); });
     expect(hook.result.current.isConnected).toBe(true);
@@ -447,7 +448,7 @@ describe('dapp connection workflow', () => {
       const { client, publish } = controlledClient(connected());
       const saving = deferred<void>();
       const hook = renderHook(useEnboxConnection, {
-        wrapper: ({ children }) => <EnboxProvider client={client}
+        wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}
           beforeConnect={() => saving.promise} beforeDisconnect={() => saving.promise}>{children}</EnboxProvider>,
       });
       let result!: Promise<void>;
@@ -468,7 +469,7 @@ describe('dapp connection workflow', () => {
       publish(result); return result;
     });
     const hook = renderHook(useEnboxConnection, {
-      wrapper: ({ children }) => <EnboxProvider client={client}>{children}</EnboxProvider>,
+      wrapper: ({ children }) => <EnboxProvider application={applicationFor(client)}>{children}</EnboxProvider>,
     });
     await act(async () => { await hook.result.current.connect(); });
     expect(hook.result.current.connectionError).toBeUndefined();

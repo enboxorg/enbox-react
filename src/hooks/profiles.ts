@@ -26,17 +26,16 @@ export function useProfiles(
     JSON.parse(didSetKey) as string[],
     images,
   ), [source, didSetKey, enabled, images]);
-  return useSyncExternalStore(observer.subscribe, observer.getSnapshot, observer.getServerSnapshot);
+  return useSyncExternalStore(observer.subscribe, observer.getSnapshot);
 }
 
 const EMPTY_PROFILE = idleProfileResult();
 
-/** Resolve one profile; passing false disables reads. */
+/** Resolve one profile; set enabled to false to disable reads. */
 export function useProfile(
   source: ProfileSource | null | undefined,
   did: string | undefined,
-  enabledOrOptions: boolean | ProfileOptions = true,
+  options: ProfileOptions = {},
 ): ProfileResult {
-  const options = typeof enabledOrOptions === 'boolean' ? { enabled: enabledOrOptions } : enabledOrOptions;
   return useProfiles(source, did ? [did] : [], options).get(did ?? '') ?? EMPTY_PROFILE;
 }
