@@ -5,7 +5,7 @@
     "": {
       "name": "enbox-react-react18-tests",
       "dependencies": {
-        "@enbox/browser": "0.3.84",
+        "@enbox/browser": "0.3.85",
         "@enbox/react": "file:../../../.artifacts/enbox-react.tgz",
         "react": "18.3.1",
         "react-dom": "18.3.1",
@@ -53,7 +53,7 @@
 
     "@enbox/auth": ["@enbox/auth@0.6.96", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-clients": "0.4.37", "@enbox/dwn-sdk-js": "0.4.29", "level": "8.0.1" } }, "sha512-a2sHoWyO67fv6I1eMO+S+Gg9sgIKCbuPCgwYXcth8AFTfiLsv5tad+fsWx60NESBGEOKScUFBL0UAtGZ3EFD3Q=="],
 
-    "@enbox/browser": ["@enbox/browser@0.3.84", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/api": "0.6.91", "@enbox/auth": "0.6.96", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-sdk-js": "0.4.29", "@enbox/protocols": "0.2.118" } }, "sha512-JJ/0freyjqJS4zyL1EwEQx62ZXegFqTKKl0A9udN1ExzA4hJrLAlrmI9FCJkW8vmbvxZdsXR7D+BitpdVMHT6w=="],
+    "@enbox/browser": ["@enbox/browser@0.3.85", "", { "dependencies": { "@enbox/agent": "0.8.50", "@enbox/api": "0.6.91", "@enbox/auth": "0.6.96", "@enbox/common": "0.1.9", "@enbox/connect": "0.1.25", "@enbox/crypto": "0.1.12", "@enbox/dids": "0.1.14", "@enbox/dwn-sdk-js": "0.4.29", "@enbox/protocols": "0.2.118" } }, "sha512-hoLKln2AHOnaIp1+injvN2AvT/Nb8/Ycw4XxZl48GoJm4GyiwFDsznU63U2ZI+IL2UKqZNz7NGV4E/S5emtcGg=="],
 
     "@enbox/common": ["@enbox/common@0.1.9", "", { "dependencies": { "multiformats": "14.0.3" }, "peerDependencies": { "abstract-level": "1.0.4", "level": "8.0.1" }, "optionalPeers": ["abstract-level", "level"] }, "sha512-yIKqCGNHWp32rwqePkPujJOzt8dsP6CWY0L6vEAYZt3/AyD5v9GfKbyURILnCktXsk4fPar6K9JqXF2cmK8W4A=="],
 
@@ -69,7 +69,7 @@
 
     "@enbox/protocols": ["@enbox/protocols@0.2.118", "", { "dependencies": { "@enbox/api": "0.6.91", "@enbox/dwn-sdk-js": "0.4.29" } }, "sha512-vR1Aa7CIUYRNgzdOqMHKUFCS2py16K5TSOiVgPUMR4k2ELZy5GLxWHB/Kix5kbuY7tgmI2tmY306VNfYmUr2Tw=="],
 
-    "@enbox/react": ["@enbox/react@../../../.artifacts/enbox-react.tgz", { "dependencies": { "use-sync-external-store": "1.7.0" }, "peerDependencies": { "@enbox/browser": "0.3.84", "react": "18.3.1 || 19.3.0" } }, "sha512-eJGYFjFP04xO2ae4EK/iPxR1EDS49sWAGHbzK03p6nVuka3N5xVJ19L9HnB4zTHnxrmG8mJzxBoJbIklaCfNMQ=="],
+    "@enbox/react": ["@enbox/react@../../../.artifacts/enbox-react.tgz", { "dependencies": { "use-sync-external-store": "1.7.0" }, "peerDependencies": { "@enbox/browser": "0.3.85", "react": "18.3.1 || 19.3.0" } }, "sha512-gOY6WyKEjsTqQL1w7V9iJ1DHQA8xKLkcLDdHfI3dtCwhq37LN0NRdgLmRQLge3/eU27PTxq8NWmAn2XkQ7747w=="],
 
     "@ipld/dag-cbor": ["@ipld/dag-cbor@10.0.1", "", { "dependencies": { "cborg": "^5.0.1", "multiformats": "^14.0.0" } }, "sha512-nF07iiZPqduSXyMxc0jGANArRHFa9hjMQpQlgLOV2O/3xI1CNb5sXhvbmigbMiz5owSGi0Oq10VtauupMojuiw=="],
 
