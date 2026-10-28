@@ -12,7 +12,6 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@enbox/api": "0.6.90",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/node": "22.19.15",

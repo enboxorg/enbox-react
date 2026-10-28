@@ -117,7 +117,8 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
   // A bounded window cannot prove an unlisted record is missing. Reuse loaded
   // rows, and acquire a single-record view only while that proof is unavailable.
   const needsLookup = !listed && (list.status !== 'ready' || list.hasMore);
-  const details = useStore(needsLookup ? board.taskById(within, recordId) : taskCollection);
+  const lookup = needsLookup ? board.taskById(within, recordId) : null;
+  const details = useStore(lookup, { fallback: list });
   const task = details.records.find((row) => row.record.id === recordId);
   const status = details.status;
   const updates = useStore(taskCollection.patch);
@@ -143,7 +144,7 @@ function TaskDetails({ within, recordId, disabled, onClose }: {
     <h3>Task details</h3>
     {status === 'error' && <p role="alert">Couldn’t load the task. <button type="button"
       disabled={disabled} onClick={() => {
-        void (needsLookup ? board.taskById(within, recordId) : taskCollection).retry().catch(() => {});
+        void (lookup ?? taskCollection).retry().catch(() => {});
       }}>Retry task</button></p>}
     {data === undefined && status === 'loading' && <p role="status">Loading task…</p>}
     {data === undefined && status === 'ready' && <p role="status">This task is no longer available.</p>}
