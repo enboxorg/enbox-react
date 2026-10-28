@@ -36,5 +36,7 @@ if (import.meta.env.PROD) {
   });
 }
 
-// The current browser SDK performs automatic worker takeover.
+// This starter activates updates immediately. Apps with an update prompt should
+// call skipWaiting only after the user accepts and pending edits are persisted.
+self.addEventListener('install', (event) => { event.waitUntil(self.skipWaiting()); });
 activatePolyfills({ onCacheCheck: () => ({ ttl: 30_000 }) });
