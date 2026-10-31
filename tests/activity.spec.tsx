@@ -77,7 +77,11 @@ describe('React Activity', () => {
         closes.push(view.close);
         return view;
       }
-      const state = Object.freeze({ status: 'ready' as const, contexts: Object.freeze(['visible']) });
+      const state = Object.freeze({
+        status: 'ready' as const,
+        contexts: Object.freeze(['visible']),
+        savedFollows: Object.freeze([]),
+      });
       const close = vi.fn(async () => {});
       closes.push(close);
       return {
