@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@enbox/browser": "0.3.85",
-    "@enbox/react": "0.0.10",
+    "@enbox/browser": "0.3.86",
+    "@enbox/react": "0.0.11",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -21,7 +21,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.2.0",
     "typescript": "5.9.3",
-    "vite": "6.4.4"
+    "vite": "6.4.5"
   },
   "engines": {
     "node": ">=22.12.0"
