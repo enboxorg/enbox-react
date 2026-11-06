@@ -89,7 +89,7 @@ try {
     ['session.html', 'session.html'],
     ['session.tsx.fixture', 'session.tsx'],
     ['tsconfig.fixture.json', 'tsconfig.fixture.json'],
-    ['protocol.mjs', 'protocol.mjs'],
+    ['module.mjs', 'module.mjs'],
     ['workers.mjs', 'workers.mjs'],
   ]) {
     cpSync(join(root, 'tests/browser/fixtures', source), join(fixtures, destination));
@@ -97,7 +97,7 @@ try {
   execFileSync(process.execPath, [
     join(project, 'node_modules/typescript/bin/tsc'), '--noEmit', '--project', join(fixtures, 'tsconfig.fixture.json'),
   ], { cwd: project, env: environment, stdio: 'inherit' });
-  execFileSync(process.execPath, [join(fixtures, 'protocol.mjs')], {
+  execFileSync(process.execPath, [join(fixtures, 'module.mjs')], {
     cwd: project, env: environment, stdio: 'inherit',
   });
   execFileSync(process.execPath, [

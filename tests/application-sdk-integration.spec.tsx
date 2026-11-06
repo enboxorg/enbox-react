@@ -1,6 +1,6 @@
 import type { TypedMaterializedRecord } from '@enbox/browser';
 
-import { createApplication, defineProtocol, defineStore, recordCodecs } from '@enbox/browser';
+import { createApplication, defineModule, defineStore, recordCodecs } from '@enbox/browser';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -8,25 +8,41 @@ import { EnboxProvider, useFeature, useStore } from '../src/index.js';
 import { connected, ControlledView, controlledClient, facade } from './helpers.js';
 
 type Note = { title: string };
-const NotesProtocol = defineProtocol({
-  protocol: 'https://application-react.test/notes', published: false,
-  types: { note: { dataFormats: ['application/json'] } },
-  structure: { note: {} },
-} as const, { note: recordCodecs.json<Note>() });
+const NotesModule = defineModule({
+  definition: {
+    module: 'https://application-react.test/notes', published: false,
+    types: { note: { dataFormats: ['application/json'] } },
+    structure: { note: {} },
+  } as const,
+  codecs: { note: recordCodecs.json<Note>() },
+});
 const NotesStore = defineStore({
-  protocols: { notes: NotesProtocol },
-  create: ({ protocols }) => ({ notes: protocols.notes.collection('note') }),
+  modules: { notes: NotesModule },
+  create: ({ modules }) => ({ notes: modules.notes.collection('note') }),
 });
 
-const NotebookProtocol = defineProtocol({
-  protocol: 'https://application-react.test/notebooks', published: false,
-  types: { notebook: { dataFormats: ['application/json'] }, note: { dataFormats: ['application/json'] } },
-  structure: { notebook: { note: {} } },
-} as const, { notebook: recordCodecs.json<{ name: string }>(), note: recordCodecs.json<Note>() });
+const NotebookCore = defineModule({
+  definition: {
+    module: 'https://application-react.test/notebook-core', published: false,
+    types: { notebook: { dataFormats: ['application/json'] } },
+    structure: { notebook: {} },
+  } as const,
+  codecs: { notebook: recordCodecs.json<{ name: string }>() },
+});
+const NotebookModule = defineModule({
+  definition: {
+    module: 'https://application-react.test/notebook-notes', published: false,
+    uses: { core: NotebookCore.definition.module },
+    types: { note: { dataFormats: ['application/json'] } },
+    structure: { notebook: { $ref: 'core:notebook', note: {} } },
+  } as const,
+  codecs: { note: recordCodecs.json<Note>() },
+  dependencies: { core: NotebookCore },
+});
 const NotebookStore = defineStore({
-  protocols: { notebooks: NotebookProtocol },
-  create({ protocols, observe }) {
-    const notes = protocols.notebooks.collection('notebook/note');
+  modules: { notebooks: NotebookModule },
+  create({ modules, observe }) {
+    const notes = modules.notebooks.collection('notebook/note');
     return { notes, activeNotes: observe({ source: (parent: string) => notes.within(parent) }) };
   },
 });

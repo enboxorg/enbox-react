@@ -29,7 +29,7 @@ for fixture boundaries and integration coverage.
 
 ## Code organization
 
-Keep native authentication, protocol, persistence, and replication behavior
+Keep native authentication, module, persistence, and replication behavior
 in Enbox. This package owns React subscriptions, rendered connection bindings,
 and presentation state. Native view ownership stays in the SDK. See [architecture](docs/architecture.md)
 for those contracts.
@@ -37,7 +37,7 @@ for those contracts.
 Use explicit domain names, preserve native public types, and keep public
 exports in the React entrypoint. Prefix hooks with `use`. Distinguish a
 connection binding from a record context: the first identifies the current
-facade/session; `within` identifies a protocol context.
+facade/session; `within` identifies a module context.
 
 Use two-space indentation, explicit type imports, and `.js` specifiers for
 local ESM imports. Break long signatures and JSX into readable lines. Use names

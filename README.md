@@ -5,7 +5,7 @@ Feature observations and commands live in the SDK and work with React and
 headless application code. React reads the same cached state through `useStore`.
 
 The canonical starter lives in `packages/create-dapp/template`. It uses the same
-feature structure as notesd: application setup, protocol definitions, feature
+feature structure as notesd: application setup, module definitions, feature
 stores, and components. Generate an app with:
 
 ```sh
@@ -14,23 +14,26 @@ npm create @enbox/dapp@latest
 
 ## Application and feature stores
 
-Declare typed protocols and feature stores with `@enbox/browser` in browser apps,
+Declare typed modules and feature stores with `@enbox/browser` in browser apps,
 or `@enbox/api` in other environments:
 
 ```ts
-import { defineProtocol, defineStore, recordCodecs } from '@enbox/browser';
+import { defineModule, defineStore, recordCodecs } from '@enbox/browser';
 
-const NotesProtocol = defineProtocol({
-  protocol: 'https://example.com/notes/v1',
-  published: false,
-  types: { note: { dataFormats: ['application/json'], encryptionRequired: true } },
-  structure: { note: {} },
-} as const, { note: recordCodecs.json<{ title: string }>() });
+const NotesModule = defineModule({
+  definition: {
+    module: 'https://example.com/notes/v1',
+    published: false,
+    types: { note: { dataFormats: ['application/json'], encryptionRequired: true } },
+    structure: { note: {} },
+  } as const,
+  codecs: { note: recordCodecs.json<{ title: string }>() },
+});
 
 export const NotesStore = defineStore({
-  protocols: { notes: NotesProtocol },
-  create({ protocols }) {
-    const notes = protocols.notes.collection('note');
+  modules: { notes: NotesModule },
+  create({ modules }) {
+    const notes = modules.notes.collection('note');
     return {
       notes,
       add: (title: string) => notes.create.run({ title: title.trim() }),
@@ -100,15 +103,15 @@ consumer releases its observation unless a headless owner still retains it.
 ## Shared observations
 
 `observe(...)` declares a shared observable store for a native view. Creating it
-is inert; subscriptions or headless controls activate observation. Protocol
+is inert; subscriptions or headless controls activate observation. Module
 collections use this same implementation and add scoped write commands.
 An `ObservedStore` preserves its native typed data, such as records or contexts.
 
 The task starter declares an observation whose input selects a scoped collection:
 
 ```ts
-create({ protocols, observe }) {
-  const tasks = protocols.board.collection('project/task');
+create({ modules, observe }) {
+  const tasks = modules.board.collection('project/task');
   const activeTasks = observe({
     source: (parent: string) => tasks.within(parent),
   });
@@ -141,7 +144,7 @@ try {
 }
 ```
 
-Advanced native operations remain available through `protocols.notes.native()`
+Advanced native operations remain available through `modules.notes.native()`
 inside an observation opener or command. The native client retains the SDK's full
 query, singleton, file, metadata, context, and sharing contracts. Resolve it when
 performing work instead of caching it across authorization changes.

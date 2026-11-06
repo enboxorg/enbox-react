@@ -177,7 +177,7 @@ describe('profile state with the native SDK reader', () => {
     const avatar = new Blob(['avatar']);
     const source = { records: {
       query: vi.fn(async () => ({ status: { code: 200 }, records: [profileRecord('Alice')] })),
-      read: vi.fn(async (request) => request.filter.protocolPath === 'profile/avatar'
+      read: vi.fn(async (request) => request.filter.modulePath === 'profile/avatar'
         ? { status: { code: 200 }, record: { data: { json: async () => ({}), blob: async () => avatar } } }
         : { status: { code: 400, detail: 'invalid image' } }),
     } } satisfies ProfileReaderSource;

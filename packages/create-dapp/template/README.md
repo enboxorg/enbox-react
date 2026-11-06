@@ -55,7 +55,7 @@ src/
     application.ts      # features, wallet identity, and one application owner
     App.tsx             # connection shell and feature composition
   features/tasks/
-    protocol.ts         # typed encrypted records and validation
+    module.ts           # typed encrypted records and validation
     store.ts            # shared observations, commands, and domain defaults
     components/         # task board and its styles
   components/           # reusable UI shared by features
@@ -64,13 +64,13 @@ src/
   sw.ts
 ```
 
-`createApplication` derives the protocol manifest from registered stores and
+`createApplication` derives the module manifest from registered stores and
 constructs the browser connection with the configured wallet identity.
 `getApplication()` keeps one headless runtime for the page lifetime.
 `main.tsx` waits for worker control before passing that runtime to
 `EnboxProvider application={...}`. The provider initializes the borrowed runtime;
 the application owns its page lifetime. Component Fast Refresh is useful for UI
-edits, but replacing a connected runtime or its store/protocol definitions is
+edits, but replacing a connected runtime or its store/module definitions is
 not a supported hot-reload operation. Disconnect before changing those files,
 then reload the page. Apps with document writers, such as Notesd, drain edits
 as part of disconnecting.
@@ -83,7 +83,7 @@ the expanded details still show which name is publicly published.
 
 The replaceable task feature lives in `src/features/tasks`:
 
-- `protocol.ts` declares encrypted `project` and `project/task` records with
+- `module.ts` declares encrypted `project` and `project/task` records with
   payload validators. Tasks store a title and completion state.
 - `store.ts` declares one shared project collection and a task collection scoped
   with `tasks.within(projectContextId)`. Its `activeTasks` observation keeps
@@ -123,13 +123,13 @@ commands remain on canonical `tasks.within(parentContextId)` handles.
 
 To replace the task feature, register your own store in `app/application.ts`,
 delete `src/features/tasks`, and change the feature rendered by `app/App.tsx`.
-Enbox requires at least one application protocol, so keep your replacement
+Enbox requires at least one application module, so keep your replacement
 registered. The profile card, connection shell, and service worker remain the
 base for your app.
 
-The demo's default protocol URI is
+The demo's default module URI is
 `https://example.com/<encoded app ID>/demo/v2`. Replace the URI expression in
-`src/features/tasks/protocol.ts` with a stable URI
+`src/features/tasks/module.ts` with a stable URI
 you control before publishing. This URI identifies saved records and wallet
 grants: changing it creates a different data namespace. Once deployed, keep
 that identifier fixed when changing the app's display name.

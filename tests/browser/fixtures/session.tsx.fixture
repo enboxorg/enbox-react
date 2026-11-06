@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from '../src/app/App.js';
 import { applicationOptions } from '../src/app/application.js';
-import type { Project, Task } from '../src/features/tasks/protocol.js';
+import type { Project, Task } from '../src/features/tasks/module.js';
 import '../src/style.css';
 
 // Control only the native boundary. The starter uses the actual React SDK.

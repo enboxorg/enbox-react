@@ -21,9 +21,9 @@ test('connects, edits and completes tasks, and keeps projects separate', async (
   await page.getByRole('checkbox', { name: 'Complete Ship the task board', exact: true }).check();
   await expect(details).toContainText('Ship the task board · Completed');
 
-  await page.getByLabel('New task', { exact: true }).fill('Review the protocol');
+  await page.getByLabel('New task', { exact: true }).fill('Review the module');
   await page.getByRole('button', { name: 'Add task', exact: true }).click();
-  await expect(details).toContainText('Review the protocol · To do');
+  await expect(details).toContainText('Review the module · To do');
   await page.getByRole('button', { name: 'Open task Ship the task board', exact: true }).click();
   await expect(details).toContainText('Ship the task board · Completed');
 
@@ -43,7 +43,7 @@ test('connects, edits and completes tasks, and keeps projects separate', async (
   await expect(details).toContainText('To do');
   await page.getByRole('button', { name: 'Delete task', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Complete Ship the task board', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('checkbox', { name: 'Complete Review the protocol', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Complete Review the module', exact: true })).toBeVisible();
   await expect(details).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: '.artifacts/starter-connected.png', fullPage: true });
