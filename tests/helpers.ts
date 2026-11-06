@@ -98,7 +98,7 @@ export function applicationFor(client: ConnectionStore): ApplicationRuntime {
   let application = applications.get(client);
   if (application === undefined) {
     application = {
-      manifest: defineApplicationManifest({ protocols: [] }),
+      manifest: defineApplicationManifest({ modules: [] }),
       connection: client,
       store: () => { throw new Error('This UI fixture does not resolve features.'); },
       subscribe: () => () => {},

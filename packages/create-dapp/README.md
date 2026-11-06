@@ -33,7 +33,7 @@ interactive terminal; scripts must provide it explicitly.
 The directory's basename becomes the display name in `src/app.json`. Its
 normalized lowercase npm name becomes both the package name and the stable
 `app.json` ID. The ID identifies
-the app to the wallet and defines its private demo protocol namespace. Keep
+the app to the wallet and defines its private demo module namespace. Keep
 the ID when changing the display name so saved data remains in the same
 namespace. Source code is copied unchanged. Run `--help` for usage or
 `--version` for the generator version.

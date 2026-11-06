@@ -14,7 +14,7 @@ describe('headless observations in React', () => {
     const firstWrite = vi.fn(async () => 'A');
     const secondWrite = vi.fn(async () => 'B');
     const feature = defineStore({
-      protocols: {},
+      modules: {},
       create: ({ observe, command }) => ({
         first: observe(firstOpen), second: observe(secondOpen),
         firstWrite: command(firstWrite), secondWrite: command(secondWrite),

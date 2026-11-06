@@ -3,14 +3,14 @@ import { createEnboxTestContext } from '@enbox/api/testing';
 import { defineApplicationManifest } from '@enbox/browser';
 
 import app from '../src/app.json' with { type: 'json' };
-import { TaskBoardProtocol } from '../src/features/tasks/protocol.ts';
+import { TaskBoardModule } from '../src/features/tasks/module.ts';
 
 assert.notEqual(app.id, app.name, 'The consumer must exercise distinct stable ID and display name.');
-assert.equal(TaskBoardProtocol.definition.protocol, `https://example.com/${encodeURIComponent(app.id)}/demo/v2`);
-const context = await createEnboxTestContext({ application: defineApplicationManifest({ protocols: [TaskBoardProtocol] }) });
+assert.equal(TaskBoardModule.definition.module, `https://example.com/${encodeURIComponent(app.id)}/demo/v2`);
+const context = await createEnboxTestContext({ application: defineApplicationManifest({ modules: [TaskBoardModule] }) });
 let view;
 try {
-  const records = context.enbox.using(TaskBoardProtocol).records;
+  const records = context.enbox.using(TaskBoardModule).records;
   const work = await records.create('project', { data: { name: 'Work' } });
   const home = await records.create('project', { data: { name: 'Home' } });
   const task = await records.create('project/task', { data: { title: 'Ship it', completed: false }, parentContextId: work.contextId });

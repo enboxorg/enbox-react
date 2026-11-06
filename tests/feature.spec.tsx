@@ -14,7 +14,7 @@ function controlledApplication() {
   const listeners = new Set<() => void>();
   let feature = { name: 'first' };
   const application: ApplicationRuntime = {
-    manifest: { protocols: [] },
+    manifest: { modules: [] },
     connection: client,
     store: <Definition extends StoreDefinition>(_definition: Definition): StoreInstance<Definition> =>
       feature as StoreInstance<Definition>,

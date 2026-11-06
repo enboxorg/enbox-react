@@ -6,7 +6,7 @@ React borrows those objects and presents their cached state.
 
 ## Application setup
 
-`createApplication` registers features, derives their protocol manifest, and owns
+`createApplication` registers features, derives their module manifest, and owns
 one native connection. Browser application setup adds wallet defaults and its
 browser connect handler. Custom/native callers provide a connection factory that
 receives the derived manifest. Application construction does not initialize the
@@ -19,7 +19,7 @@ can drain pending work before connect/disconnect without changing native actions
 
 ## Features and observations
 
-`defineStore` declares typed protocol and feature dependencies. Its factory runs
+`defineStore` declares typed module and feature dependencies. Its factory runs
 once per application authorization scope and returns inert handles synchronously.
 The application closes them when their exact session or native facade changes.
 Headless controllers and React obtain the same feature through
@@ -27,10 +27,10 @@ Headless controllers and React obtain the same feature through
 
 One SDK implementation handles fixed observations and observations with changing inputs.
 It owns asynchronous opening, cancellation, attachment, cached publications,
-readiness, explicit leases, and cleanup. Protocol collection helpers supply typed
+readiness, explicit leases, and cleanup. Module collection helpers supply typed
 sources and commands through that same owner. Custom sources preserve native
 record/context data and source-specific controls; React has no data-owner factory
-or protocol query layer.
+or module query layer.
 
 Subscriptions acquire observation interest. Headless owners use `retain()` when
 an observation must continue without subscribers; readiness and controls use
@@ -43,7 +43,7 @@ until that scope ends. Descriptor eviction is separate work.
 
 Native queries, remote roles, singleton slots, selected child materialization,
 files, metadata, and context/sharing operations retain their SDK contracts.
-Feature observations and commands call the full typed native client when a protocol
+Feature observations and commands call the full typed native client when a module
 collection convenience does not express the needed operation. No second React
 ownership model is needed for these sources.
 
@@ -91,7 +91,7 @@ Profile hooks retain their browser presentation responsibilities: native-reader
 sharing, DID watches, per-field settlement, image policy, cached results, and Blob
 URL leases. They accept explicit sources and work without a provider. Native
 profile reads and Blob URL pooling already come from the SDK. These capabilities
-are distinct from protocol collection ownership.
+are distinct from module collection ownership.
 
 The create template and notesd follow this same feature/observation/command model.
 Product navigation, drafts, document orchestration, notices, and display fallbacks

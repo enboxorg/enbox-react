@@ -117,10 +117,11 @@ test('generates the bundled template with display and npm names kept in JSON', (
   assert.equal(json(join(destination, 'src/app.json')).id, 'my-fantastic-app');
   assert.equal(json(join(destination, 'src/app.json')).name, basename(destination));
   for (const path of ['index.html', 'tsconfig.json', 'vite.config.ts', 'src/main.tsx', 'src/app/App.tsx',
-    'src/app/application.ts', 'src/features/tasks/protocol.ts', 'src/features/tasks/store.ts',
+    'src/app/application.ts', 'src/features/tasks/module.ts', 'src/features/tasks/store.ts',
     'src/features/tasks/components/TaskBoard.tsx', 'src/components/ProfileCard.tsx', '.gitignore']) {
     assert.equal(fs.statSync(join(destination, path)).isFile(), true, path);
   }
+  assert.equal(fs.existsSync(join(destination, 'src/features/tasks/protocol.ts')), false);
   assert.equal(fs.existsSync(join(destination, '_gitignore')), false);
   assert.equal(fs.readFileSync(join(destination, '.gitignore'), 'utf8'), fs.readFileSync(join(template, '_gitignore'), 'utf8'));
   assert.equal(fs.readFileSync(join(destination, 'src/main.tsx'), 'utf8'), fs.readFileSync(join(template, 'src/main.tsx'), 'utf8'));

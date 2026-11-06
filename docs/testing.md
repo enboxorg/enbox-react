@@ -18,7 +18,7 @@ this repository. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup.
 | Public types | SDK observation and command payloads, nullable/plain source contracts, selected fallbacks, equality and connection/profile options. |
 | Package | Exactly the supported React exports, declarations/client directives, Node import safety and pinned dependencies. |
 | Generator | Canonical template, JSON customization, destination guards, command output and failed-write cleanup. |
-| Browser | Fresh standalone installs/builds, worker control/update/offline shell, encrypted native protocol fixture and connected task-board behavior. |
+| Browser | Fresh standalone installs/builds, worker control/update/offline shell, encrypted native module fixture and connected task-board behavior. |
 
 Native observation ownership lives in `@enbox/api`. Its observation tests own
 asynchronous opening, reentrant cleanup, readiness cancellation, stale outcomes,
@@ -58,7 +58,7 @@ reinstallation against their newly created lockfiles. Generator publication uses
 `ENBOX_STARTER_SDK_SOURCE=registry` to require the actual released template pins.
 Test fixtures are injected after the production build and never ship to users.
 
-The encrypted protocol fixture checks projects, scoped tasks, completion/reopening,
+The encrypted module fixture checks projects, scoped tasks, completion/reopening,
 read-by-ID and codec validation. Browser UI checks cover profile fallback, project
 isolation, task CRUD, read/write retries, list/detail observer reuse, selection
 outside a bounded window and disconnect during pending work. They preserve the

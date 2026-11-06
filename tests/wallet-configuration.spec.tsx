@@ -14,12 +14,15 @@ vi.mock('@enbox/browser', async (original) => ({
 }));
 
 import { EnboxProvider, useEnboxConnection } from '../src/index.js';
-import { createApplication, defineProtocol, recordCodecs } from '@enbox/browser';
+import { createApplication, defineModule, recordCodecs } from '@enbox/browser';
 
-const protocol = defineProtocol({
-  protocol: 'https://wallet-options.test/notes', published: false,
-  types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
-} as const, { note: recordCodecs.json<{ title: string }>() });
+const NotesModule = defineModule({
+  definition: {
+    module: 'https://wallet-options.test/notes', published: false,
+    types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
+  } as const,
+  codecs: { note: recordCodecs.json<{ title: string }>() },
+});
 
 function captureApproval(client: ConnectionStore): void {
   const snapshot = { phase: 'disconnected' } as const;
@@ -35,7 +38,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 describe('provider wallet configuration', () => {
   it('inherits the application wallet identity when choosing a wallet', async () => {
     const wallet = { appName: 'Original notes', appIcon: '/original.svg', applicationId: 'notes-id' };
-    const application = createApplication({ stores: {}, protocols: [protocol], wallet });
+    const application = createApplication({ stores: {}, modules: [NotesModule], wallet });
     const hook = renderHook(useEnboxConnection, {
       wrapper: ({ children }) => <EnboxProvider application={application} initializeOnMount={false}>{children}</EnboxProvider>,
     });
@@ -58,7 +61,7 @@ describe('provider wallet configuration', () => {
   });
 
   it('keeps explicit per-call wallet overrides', async () => {
-    const application = createApplication({ stores: {}, protocols: [protocol], wallet: { appName: 'Notes', appIcon: '/original.svg' } });
+    const application = createApplication({ stores: {}, modules: [NotesModule], wallet: { appName: 'Notes', appIcon: '/original.svg' } });
     const client = application.connection;
     captureApproval(client);
     const hook = renderHook(useEnboxConnection, {

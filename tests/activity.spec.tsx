@@ -88,7 +88,7 @@ describe('React Activity', () => {
         getSnapshot: () => state, subscribe: () => () => {}, ready: async () => state, close,
       } satisfies ContextView<string>;
     });
-    const feature = defineStore({ protocols: {}, create: ({ observe }) => ({ items: observe(open) }) });
+    const feature = defineStore({ modules: {}, create: ({ observe }) => ({ items: observe(open) }) });
     const { client } = controlledClient(connected());
     const application = createApplication({ stores: { feature }, connection: () => client });
     function Content() { return <output>{useStore(useFeature(feature).items).status}</output>; }

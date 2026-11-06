@@ -1,15 +1,15 @@
 import { DateSort, defineStore } from '@enbox/browser';
 
-import { TaskBoardProtocol } from './protocol.js';
+import { TaskBoardModule } from './module.js';
 
-/** Protocol observations and domain defaults are shared with every consumer. */
+/** Module observations and domain defaults are shared with every consumer. */
 export const TaskBoardStore = defineStore({
-  protocols: { board: TaskBoardProtocol },
-  create({ protocols, observe }) {
-    const projects = protocols.board.collection('project', { dateSort: DateSort.CreatedDescending });
-    const tasks = protocols.board.collection('project/task');
+  modules: { board: TaskBoardModule },
+  create({ modules, observe }) {
+    const projects = modules.board.collection('project', { dateSort: DateSort.CreatedDescending });
+    const tasks = modules.board.collection('project/task');
     const activeTasks = observe({ source: (parent: string) => tasks.within(parent) });
-    const taskById = (within: string, recordId: string) => protocols.board.collection('project/task', {
+    const taskById = (within: string, recordId: string) => modules.board.collection('project/task', {
       filter: { recordId }, pagination: { limit: 1 },
     }).within(within);
 
