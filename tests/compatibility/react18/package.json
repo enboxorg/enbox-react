@@ -6,7 +6,7 @@
     "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {
-    "@enbox/browser": "0.3.88",
+    "@enbox/browser": "0.3.89",
     "@enbox/react": "file:../../../.artifacts/enbox-react.tgz",
     "react": "18.3.1",
     "react-dom": "18.3.1"
